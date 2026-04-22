@@ -156,8 +156,8 @@ fn write_r_script(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rna::bam_io::{self as bam, CigarKind};
     use log::debug;
-    use rust_htslib::bam::{self, Read as BamRead};
     use std::collections::HashMap;
     use std::time::Instant;
 
@@ -165,26 +165,27 @@ mod tests {
     ///
     /// Constructs `{chrom}:{start}:{exon1_start}-{exon1_end}:{exon2_start}-{exon2_end}:...`
     /// matching RSeQC's `fetch_exon` + position key logic.
-    fn build_position_key(chrom: &str, pos: i64, cigar: &bam::record::CigarStringView) -> String {
-        use rust_htslib::bam::record::Cigar;
+    fn build_position_key(chrom: &str, pos: i64, cigar_ops: &[(CigarKind, u32)]) -> String {
+        use CigarKind as K;
 
         let mut key = format!("{}:{}:", chrom, pos);
         let mut ref_pos = pos;
 
-        for op in cigar.iter() {
-            match op {
-                Cigar::Match(len) | Cigar::Equal(len) | Cigar::Diff(len) => {
-                    let end = ref_pos + *len as i64;
+        for (kind, len) in cigar_ops {
+            let len = *len as i64;
+            match kind {
+                K::Match | K::SequenceMatch | K::SequenceMismatch => {
+                    let end = ref_pos + len;
                     key.push_str(&format!("{}-{}:", ref_pos, end));
                     ref_pos = end;
                 }
-                Cigar::Del(len) | Cigar::RefSkip(len) => {
-                    ref_pos += *len as i64;
+                K::Deletion | K::Skip => {
+                    ref_pos += len;
                 }
-                Cigar::SoftClip(len) => {
-                    ref_pos += *len as i64;
+                K::SoftClip => {
+                    ref_pos += len;
                 }
-                Cigar::Ins(_) | Cigar::HardClip(_) | Cigar::Pad(_) => {}
+                K::Insertion | K::HardClip | K::Pad => {}
             }
         }
 
@@ -192,52 +193,54 @@ mod tests {
     }
 
     /// Standalone read duplication analysis (retained for tests only).
-    fn read_duplication(
-        bam_path: &str,
-        mapq_cut: u8,
-        reference: Option<&str>,
-    ) -> Result<ReadDuplicationResult> {
+    fn read_duplication(bam_path: &str, mapq_cut: u8) -> Result<ReadDuplicationResult> {
         let start = Instant::now();
 
-        let mut bam = if let Some(ref_path) = reference {
-            let mut reader = bam::Reader::from_path(bam_path)
-                .with_context(|| format!("Failed to open BAM file: {}", bam_path))?;
-            reader.set_reference(ref_path)?;
-            reader
-        } else {
-            bam::Reader::from_path(bam_path)
-                .with_context(|| format!("Failed to open BAM file: {}", bam_path))?
-        };
+        let (mut reader, header) = bam::open(Path::new(bam_path))
+            .with_context(|| format!("Failed to open BAM file: {}", bam_path))?;
 
-        let header = bam.header().clone();
-        let target_names: Vec<String> = (0..header.target_count())
-            .map(|tid| String::from_utf8_lossy(header.tid2name(tid)).to_string())
+        let target_names: Vec<String> = bam::reference_sequences(&header)
+            .into_iter()
+            .map(|(name, _)| name)
             .collect();
 
         let mut seq_dup: HashMap<Vec<u8>, u64> = HashMap::new();
         let mut pos_dup: HashMap<String, u64> = HashMap::new();
         let mut total_processed = 0u64;
 
-        for result in bam.records() {
+        for result in reader.records() {
             let record = result.context("Failed to read BAM record")?;
+            let flags = record.flags();
 
-            if record.is_unmapped() || record.is_quality_check_failed() || record.mapq() < mapq_cut
-            {
+            if flags.is_unmapped() || flags.is_qc_fail() || bam::mapq(&record) < mapq_cut {
                 continue;
             }
 
             total_processed += 1;
 
-            let seq = record.seq().as_bytes();
-            let seq_upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
+            // Decode the sequence to ASCII uppercase bases for the seq dedup map.
+            let seq_len = record.sequence().len();
+            let mut seq_upper = Vec::with_capacity(seq_len);
+            for i in 0..seq_len {
+                let nibble = bam::encoded_base(&record, i);
+                let ch = match nibble {
+                    1 => b'A',
+                    2 => b'C',
+                    4 => b'G',
+                    8 => b'T',
+                    15 => b'N',
+                    _ => b'N',
+                };
+                seq_upper.push(ch);
+            }
             *seq_dup.entry(seq_upper).or_insert(0) += 1;
 
-            let tid = record.tid();
+            let tid = bam::tid(&record);
             if tid >= 0 && (tid as usize) < target_names.len() {
                 let chrom = &target_names[tid as usize];
-                let pos = record.pos();
-                let cigar = record.cigar();
-                let key = build_position_key(chrom, pos, &cigar);
+                let pos = bam::pos_0based(&record);
+                let cigar_ops = bam::cigar_ops(&record).context("malformed CIGAR")?;
+                let key = build_position_key(chrom, pos, &cigar_ops);
                 *pos_dup.entry(key).or_insert(0) += 1;
             }
         }
@@ -274,27 +277,19 @@ mod tests {
 
     #[test]
     fn test_build_position_key_simple() {
-        use rust_htslib::bam::record::Cigar;
-        use rust_htslib::bam::record::{CigarString, CigarStringView};
-
-        let cigar_ops = vec![Cigar::Match(50)];
-        let cigar_string = CigarString(cigar_ops);
-        let cigar_view = CigarStringView::new(cigar_string, 1000);
-
-        let key = build_position_key("chr1", 1000, &cigar_view);
+        let cigar_ops = vec![(CigarKind::Match, 50u32)];
+        let key = build_position_key("chr1", 1000, &cigar_ops);
         assert_eq!(key, "chr1:1000:1000-1050:");
     }
 
     #[test]
     fn test_build_position_key_spliced() {
-        use rust_htslib::bam::record::Cigar;
-        use rust_htslib::bam::record::{CigarString, CigarStringView};
-
-        let cigar_ops = vec![Cigar::Match(10), Cigar::RefSkip(500), Cigar::Match(20)];
-        let cigar_string = CigarString(cigar_ops);
-        let cigar_view = CigarStringView::new(cigar_string, 1000);
-
-        let key = build_position_key("chr1", 1000, &cigar_view);
+        let cigar_ops = vec![
+            (CigarKind::Match, 10u32),
+            (CigarKind::Skip, 500u32),
+            (CigarKind::Match, 20u32),
+        ];
+        let key = build_position_key("chr1", 1000, &cigar_ops);
         assert_eq!(key, "chr1:1000:1000-1010:1510-1530:");
     }
 
@@ -305,7 +300,7 @@ mod tests {
             return; // Skip if test data not available
         }
 
-        let result = read_duplication(bam_path, 30, None).unwrap();
+        let result = read_duplication(bam_path, 30).unwrap();
 
         assert!(
             !result.pos_histogram.is_empty(),

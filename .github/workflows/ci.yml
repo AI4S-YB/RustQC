@@ -26,22 +26,22 @@ jobs:
             target_cpu: x86-64-v3
           - name: macos-aarch64
             os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # ratchet:dtolnay/rust-toolchain@stable
 
+      # `plotters` uses fontconfig-dlopen on non-Windows; the system package
+      # provides the shared library it loads at runtime. All other C-dep
+      # system packages were dropped together with rust-htslib.
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake zlib1g-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev libssl-dev libfontconfig1-dev pkg-config clang
-
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: brew install bzip2 xz
+          sudo apt-get install -y libfontconfig1-dev pkg-config
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # ratchet:Swatinem/rust-cache@v2.9.1
 
@@ -50,6 +50,7 @@ jobs:
         run: echo "HOST_TRIPLE=$(rustc -vV | awk '/^host:/ {print $2}')" >> "$GITHUB_ENV"
 
       - name: Build
+        shell: bash
         run: >
           cargo build --release
           ${TARGET_CPU:+--target "$HOST_TRIPLE" --config "target.'$HOST_TRIPLE'.rustflags=['-C', 'target-cpu=$TARGET_CPU']"}
@@ -57,6 +58,7 @@ jobs:
           TARGET_CPU: ${{ matrix.target_cpu || '' }}
 
       - name: Test
+        shell: bash
         run: >
           cargo test --release
           ${TARGET_CPU:+--target "$HOST_TRIPLE" --config "target.'$HOST_TRIPLE'.rustflags=['-C', 'target-cpu=$TARGET_CPU']"}
@@ -87,8 +89,7 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake zlib1g-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev libssl-dev libfontconfig1-dev pkg-config clang
+          sudo apt-get install -y libfontconfig1-dev pkg-config
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # ratchet:Swatinem/rust-cache@v2.9.1
 
@@ -108,8 +109,7 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake zlib1g-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev libssl-dev libfontconfig1-dev pkg-config clang
+          sudo apt-get install -y libfontconfig1-dev pkg-config
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # ratchet:Swatinem/rust-cache@v2.9.1
 

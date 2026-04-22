@@ -60,29 +60,22 @@ pub fn write_idxstats(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rna::bam_io as bam;
     use crate::rna::rseqc::accumulators::BamStatAccum;
-    use rust_htslib::bam::{self, Read as BamRead};
     use std::io::Read;
+    use std::path::Path;
     #[test]
     fn test_idxstats_format() {
-        let mut reader =
-            bam::Reader::from_path("tests/data/test.bam").expect("Failed to open test.bam");
+        let (mut reader, header) =
+            bam::open(Path::new("tests/data/test.bam")).expect("Failed to open test.bam");
 
         // Extract header reference info
-        let header = reader.header().clone();
-        let header_refs: Vec<(String, u64)> = (0..header.target_count())
-            .map(|tid| {
-                let name = String::from_utf8_lossy(header.tid2name(tid)).to_string();
-                let len = header.target_len(tid).unwrap_or(0);
-                (name, len)
-            })
-            .collect();
+        let header_refs = bam::reference_sequences(&header);
 
         let mut accum = BamStatAccum::default();
-        let mut record = bam::Record::new();
 
-        while let Some(res) = reader.read(&mut record) {
-            res.expect("Error reading BAM record");
+        for res in reader.records() {
+            let record = res.expect("Error reading BAM record");
             accum.process_read(&record, 30);
         }
 

@@ -9,9 +9,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rust_htslib::bam;
-use rust_htslib::bam::header::HeaderRecord;
-
 /// Helper: get the path to the rustqc binary.
 ///
 /// Uses the `CARGO_BIN_EXE_rustqc` env var when available (set by cargo test),
@@ -119,30 +116,41 @@ fn write_test_gtf(path: &Path, chroms: &[&str]) {
 }
 
 fn write_bam_fixture(path: &Path, chroms: &[(&str, u64)], sam_lines: &[&str]) {
-    let mut header = bam::Header::new();
-    header.push_record(
-        HeaderRecord::new(b"HD")
-            .push_tag(b"VN", "1.6")
-            .push_tag(b"SO", "coordinate"),
-    );
+    use noodles_bam as bam;
+    use noodles_sam as sam;
+    use sam::alignment::io::Write as _;
+
+    // Build the SAM text (header + records) and feed it through the SAM
+    // reader, then re-emit each record via the BAM writer. This avoids
+    // hand-constructing noodles record values per fixture line.
+    let mut sam_text = String::new();
+    sam_text.push_str("@HD\tVN:1.6\tSO:coordinate\n");
     for (chrom, len) in chroms {
-        header.push_record(
-            HeaderRecord::new(b"SQ")
-                .push_tag(b"SN", *chrom)
-                .push_tag(b"LN", *len as i64),
-        );
+        sam_text.push_str(&format!("@SQ\tSN:{}\tLN:{}\n", chrom, len));
     }
-
-    let header_view = bam::HeaderView::from_header(&header);
-    let mut writer = bam::Writer::from_path(path, &header, bam::Format::Bam).unwrap();
     for line in sam_lines {
-        let record = bam::Record::from_sam(&header_view, line.as_bytes()).unwrap();
-        writer.write(&record).unwrap();
+        sam_text.push_str(line);
+        sam_text.push('\n');
     }
-    drop(writer);
 
+    // Read the in-memory SAM and write it as BAM.
+    {
+        let mut sam_reader = sam::io::Reader::new(sam_text.as_bytes());
+        let header = sam_reader.read_header().unwrap();
+        let bam_file = fs::File::create(path).unwrap();
+        let mut bam_writer = bam::io::Writer::new(bam_file);
+        bam_writer.write_alignment_header(&header).unwrap();
+        for result in sam_reader.record_bufs(&header) {
+            let record = result.unwrap();
+            bam_writer.write_alignment_record(&header, &record).unwrap();
+        }
+        bam_writer.finish(&header).unwrap();
+    }
+
+    // Build the BAI index and write it next to the BAM.
+    let index = bam::fs::index(path).unwrap();
     let bai_path = PathBuf::from(format!("{}.bai", path.display()));
-    bam::index::build(path, Some(&bai_path), bam::index::Type::Bai, 1).unwrap();
+    bam::bai::fs::write(&bai_path, &index).unwrap();
 }
 
 fn build_late_duplicate_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf) {

@@ -29,7 +29,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ui::{format_count, format_duration, format_pct, Ui, Verbosity};
 
-use rust_htslib::bam::Read as BamRead;
+use crate::rna::bam_io;
 
 use rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 
@@ -264,15 +264,11 @@ fn run_rna(args: cli::RnaArgs, ui: &Ui) -> Result<()> {
 
     // Validate all input alignment files before expensive GTF parsing
     for bam_path in &args.input {
-        let mut reader = rust_htslib::bam::Reader::from_path(bam_path)
+        let _ = bam_io::open(Path::new(bam_path))
             .with_context(|| format!("Cannot open alignment file '{}'", bam_path))?;
-        if let Some(ref reference) = args.reference {
-            reader
-                .set_reference(reference)
-                .with_context(|| format!("Cannot set reference for CRAM file '{}'", bam_path))?;
-        }
-        let _header = reader.header().clone();
-        // Reader dropped — just validating the file is openable
+        // CRAM with --reference is not currently supported via the noodles
+        // facade; if the user provided --reference we still attempt to open
+        // the input as plain BAM and report any decode error above.
     }
 
     let start = Instant::now();
@@ -1431,16 +1427,9 @@ fn process_single_bam(
     });
     // Extract BAM header info (reference names + lengths) for samtools-compatible outputs
     let bam_header_refs = {
-        let reader = rust_htslib::bam::Reader::from_path(bam_path)
+        let (_reader, header) = bam_io::open(Path::new(bam_path))
             .with_context(|| format!("Failed to open BAM for header: {}", bam_path))?;
-        let header = reader.header();
-        (0..header.target_count())
-            .map(|tid| {
-                let name = String::from_utf8_lossy(header.tid2name(tid)).to_string();
-                let len = header.target_len(tid).unwrap_or(0);
-                (name, len)
-            })
-            .collect::<Vec<(String, u64)>>()
+        bam_io::reference_sequences(&header)
     };
     let rseqc_outputs = write_rseqc_outputs(
         bam_path,
