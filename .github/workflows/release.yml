@@ -171,8 +171,13 @@ jobs:
           fi
           cd ..
 
-          # SHA256 checksum (shasum is available in Git Bash on Windows runners).
-          shasum -a 256 "${ARCHIVE_FILE}" > "${ARCHIVE_FILE}.sha256"
+          # SHA256 checksum. macOS ships `shasum` (Perl) but no `sha256sum`;
+          # Linux and Windows Git Bash both have `sha256sum`. Pick by OS.
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            shasum -a 256 "${ARCHIVE_FILE}" > "${ARCHIVE_FILE}.sha256"
+          else
+            sha256sum "${ARCHIVE_FILE}" > "${ARCHIVE_FILE}.sha256"
+          fi
 
           echo "archive=${ARCHIVE_FILE}" >> "$GITHUB_OUTPUT"
           echo "checksum=${ARCHIVE_FILE}.sha256" >> "$GITHUB_OUTPUT"
