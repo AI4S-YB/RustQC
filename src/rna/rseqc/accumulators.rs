@@ -759,10 +759,10 @@ impl BamStatAccum {
                 // GC content: cumulative step function with ngc=200 bins.
                 // Matches samtools stats.c:925-941. For a read with gc_count G/C
                 // bases out of read_len total, increment bins gc_idx_min..gc_idx_max.
-                if read_len > 0 {
+                if let Some(read_len_nz) = std::num::NonZeroUsize::new(read_len) {
                     let ngc: usize = 200;
-                    let gc_idx_min = gc_count as usize * (ngc - 1) / read_len;
-                    let mut gc_idx_max = (gc_count as usize + 1) * (ngc - 1) / read_len;
+                    let gc_idx_min = gc_count as usize * (ngc - 1) / read_len_nz;
+                    let mut gc_idx_max = (gc_count as usize + 1) * (ngc - 1) / read_len_nz;
                     if gc_idx_max >= ngc {
                         gc_idx_max = ngc - 1;
                     }

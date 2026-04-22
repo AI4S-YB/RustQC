@@ -22,13 +22,11 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive", "env"] }
 
 # BAM/SAM in pure Rust via noodles, replacing rust-htslib.
+# (cram/fasta/csi are not yet imported; re-add when CRAM support lands.)
 noodles-sam = "0.81"
 noodles-bam = "0.85"
 noodles-bgzf = "0.45"
 noodles-core = "0.18"
-noodles-cram = "0.88"
-noodles-fasta = "0.58"
-noodles-csi = "0.53"
 
 # Plotting — `plotters` itself is declared in platform-specific [target] blocks
 # at the bottom of the file (Windows has no fontconfig to dlopen).
