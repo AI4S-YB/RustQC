@@ -1,5 +1,58 @@
 # RustQC Changelog
 
+## [Version 0.3.0](https://github.com/AI4S-YB/RustQC/releases/tag/v0.3.0) - 2026-04-22
+
+First release of the AI4S-YB fork. Focus: Windows support and a pure-Rust
+alignment-file backend. This is a **hard fork** of `seqeralabs/RustQC` v0.2.1
+and is not published to crates.io.
+
+### Breaking changes
+
+- **CRAM input is no longer supported.** The `rust-htslib` (HTSlib C library)
+  backend was replaced with [`noodles`](https://github.com/zaeleus/noodles).
+  `noodles-cram` 0.88 uses Rust 1.88+ syntax (let-chains), which conflicts
+  with the project's MSRV of 1.87, so CRAM was dropped rather than bumping
+  the toolchain. BAM and SAM remain fully supported. CRAM can return by
+  raising MSRV to ≥ 1.88 and re-adding `noodles-cram`.
+
+### New features
+
+- **Native Windows builds.** `x86_64-pc-windows-msvc` is now a first-class
+  target. Release artifacts include `rustqc-windows-x86_64.zip` alongside
+  the existing `.tar.gz` archives for Linux and macOS.
+
+### Internal changes
+
+- New `src/rna/bam_io.rs` facade module centralizes the semantic differences
+  between `rust-htslib` and `noodles` (MAPQ=255 sentinel handling, 1-based
+  ↔ 0-based position conversion, aux-tag integer extraction, CIGAR op
+  collection, QNAME `*` fallback, 4-bit encoded-base access for sequence
+  hashing). `open()` auto-detects SAM vs BAM and transcodes SAM through
+  noodles at load time so downstream code only sees `bam::Record`.
+- Build pipeline simplified: the htslib-era C dependency chain
+  (`hts-sys`, `openssl-sys`, `curl-sys`, `libz-sys`, `bzip2-sys`,
+  `lzma-sys`, `libclang`) is gone. Linux CI deps shrank from eight
+  system packages to two (`libfontconfig1-dev`, `pkg-config`).
+- `build.rs` no longer shells out to `date`; `qualimap/report.rs`
+  uses `chrono::Local` for local-time formatting. These were the
+  last POSIX-only hold-outs blocking Windows.
+- `plotters`'s `fontconfig-dlopen` feature is now gated behind
+  `cfg(not(windows))`.
+
+### Known regressions
+
+- Multithreaded BGZF decode (the old `bam.set_threads(n)` path) is
+  disabled. Large BAM throughput is lower than upstream v0.2.1 until
+  `noodles_bgzf::io::MultithreadedReader` is wired in; correctness is
+  unaffected. See `TODO(noodles-threading)` markers in
+  `src/rna/dupradar/counting.rs`.
+
+### Tests
+
+- All 234 unit and integration tests pass on Linux, macOS and Windows.
+- `preseq lc_extrap` output is byte-identical to the pre-migration
+  reference (`tests/data/test.preseq_lc_extrap.txt`).
+
 ## [Version 0.2.1](https://github.com/seqeralabs/RustQC/releases/tag/v0.2.1) - 2026-04-09
 
 ### Bug fixes
