@@ -1,16 +1,16 @@
 [package]
 name = "rustqc"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.87"
 authors = ["Phil Ewels <phil.ewels@seqera.io>", "Jon Manning <jonathan.manning@seqera.io>"]
 description = "Fast RNA-seq QC in a single pass: dupRadar, featureCounts, 8 RSeQC tools, preseq, samtools stats, and Qualimap — reimplemented in Rust"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/seqeralabs/RustQC"
+repository = "https://github.com/AI4S-YB/RustQC"
 readme = "README.md"
 keywords = ["bioinformatics", "rna-seq", "duplication", "qc", "rseqc"]
 categories = ["command-line-utilities", "science"]
-homepage = "https://seqeralabs.github.io/RustQC/"
+homepage = "https://github.com/AI4S-YB/RustQC"
 exclude = ["benchmark/", "docs/", "paper/", "tests/", ".github/", "Dockerfile", ".dockerignore", ".pre-commit-config.yaml", "netlify.toml", "CONTRIBUTING.md", "AGENTS.md"]
 
 [[bin]]
