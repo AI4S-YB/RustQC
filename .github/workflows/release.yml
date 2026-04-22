@@ -117,6 +117,11 @@ jobs:
             target: aarch64-apple-darwin
             target_cpu: apple-m1
 
+          # Windows x86_64 (MSVC toolchain, baseline)
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6.0.2
 
@@ -125,20 +130,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Linux build dependencies
+      # `plotters` dlopens fontconfig on non-Windows; the system package
+      # supplies the shared library. All htslib-era C build deps were
+      # dropped when rust-htslib was replaced with pure-Rust noodles.
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake zlib1g-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev libssl-dev libfontconfig1-dev pkg-config clang
-
-      # macOS build dependencies
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: brew install bzip2 xz
+          sudo apt-get install -y libfontconfig1-dev pkg-config
 
       - name: Build
+        shell: bash
         run: >
           cargo build --release --target ${{ matrix.target }}
           ${TARGET_CPU:+--config "target.'${{ matrix.target }}'.rustflags=['-C', 'target-cpu=$TARGET_CPU']"}
@@ -147,23 +149,33 @@ jobs:
 
       - name: Package
         id: package
+        shell: bash
         run: |
           BIN="rustqc"
+          EXT=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then EXT=".exe"; fi
           ARCHIVE="${BIN}-${{ matrix.name }}"
 
           mkdir -p "staging/${ARCHIVE}"
-          cp "target/${{ matrix.target }}/release/${BIN}" "staging/${ARCHIVE}/"
+          cp "target/${{ matrix.target }}/release/${BIN}${EXT}" "staging/${ARCHIVE}/"
           cp README.md LICENSE "staging/${ARCHIVE}/" 2>/dev/null || true
 
           cd staging
-          tar czf "../${ARCHIVE}.tar.gz" "${ARCHIVE}"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Windows users expect .zip; macOS/Linux get .tar.gz.
+            7z a "../${ARCHIVE}.zip" "${ARCHIVE}" > /dev/null
+            ARCHIVE_FILE="${ARCHIVE}.zip"
+          else
+            tar czf "../${ARCHIVE}.tar.gz" "${ARCHIVE}"
+            ARCHIVE_FILE="${ARCHIVE}.tar.gz"
+          fi
           cd ..
 
-          # SHA256 checksum
-          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          # SHA256 checksum (shasum is available in Git Bash on Windows runners).
+          shasum -a 256 "${ARCHIVE_FILE}" > "${ARCHIVE_FILE}.sha256"
 
-          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "checksum=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          echo "archive=${ARCHIVE_FILE}" >> "$GITHUB_OUTPUT"
+          echo "checksum=${ARCHIVE_FILE}.sha256" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # ratchet:actions/upload-artifact@v7.0.1

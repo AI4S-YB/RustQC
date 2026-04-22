@@ -11,6 +11,7 @@
 
 use crate::cli::Strandedness;
 use crate::gtf::Gene;
+use crate::rna::bam_io::{self as bam, CigarKind};
 use crate::rna::qualimap::QualimapAccum;
 use crate::rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 use crate::ui::format_count;
@@ -19,8 +20,8 @@ use coitrees::{COITree, Interval, IntervalTree};
 use indexmap::IndexMap;
 use indicatif::ProgressBar;
 use log::{debug, warn};
+use noodles_core::Region;
 use rayon::prelude::*;
-use rust_htslib::bam::{self, FetchDefinition, Read as BamRead};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -416,33 +417,30 @@ fn strand_matches(
 /// * `start` - The reference start position of the read
 /// * `cigar` - The CIGAR string view from the alignment record
 /// * `blocks` - Reusable buffer for aligned blocks (cleared before use)
-fn cigar_to_aligned_blocks(
-    start: u64,
-    cigar: &rust_htslib::bam::record::CigarStringView,
-    blocks: &mut Vec<(u64, u64)>,
-) {
-    use rust_htslib::bam::record::Cigar;
+fn cigar_to_aligned_blocks(start: u64, record: &bam::Record, blocks: &mut Vec<(u64, u64)>) {
+    use CigarKind as K;
     blocks.clear();
     let mut ref_pos = start;
 
-    for op in cigar.iter() {
-        match op {
+    for op in record.cigar().iter() {
+        let op = op.expect("malformed CIGAR");
+        let len = op.len() as u64;
+        match op.kind() {
             // Alignment match (M), sequence match (=), sequence mismatch (X):
             // These consume both reference and query bases. They represent
             // actual aligned segments.
-            Cigar::Match(len) | Cigar::Equal(len) | Cigar::Diff(len) => {
-                let len = *len as u64;
+            K::Match | K::SequenceMatch | K::SequenceMismatch => {
                 blocks.push((ref_pos, ref_pos + len));
                 ref_pos += len;
             }
             // Reference skip (N): intron in RNA-seq. Advances reference only.
             // Deletion (D): deletion from reference. Advances reference only.
-            Cigar::RefSkip(len) | Cigar::Del(len) => {
-                ref_pos += *len as u64;
+            K::Skip | K::Deletion => {
+                ref_pos += len;
             }
             // Insertion (I), soft clip (S), hard clip (H), padding (P):
             // These do not advance the reference position.
-            Cigar::Ins(_) | Cigar::SoftClip(_) | Cigar::HardClip(_) | Cigar::Pad(_) => {}
+            K::Insertion | K::SoftClip | K::HardClip | K::Pad => {}
         }
     }
 }
@@ -786,7 +784,7 @@ fn process_counting_record(
     biotype_hits_buf: &mut Vec<u16>,
     mate_buffer: &mut HashMap<MateBufferKey, MateInfo>,
 ) {
-    let flags = record.flags();
+    let flags = u16::from(record.flags());
 
     // Skip unmapped reads (count for featureCounts summary)
     if flags & BAM_FUNMAP != 0 {
@@ -821,7 +819,7 @@ fn process_counting_record(
     }
 
     // Determine if the read is a multimapper (NH tag)
-    let is_multi = crate::rna::bam_flags::get_aux_int(record, b"NH").is_some_and(|nh| nh > 1);
+    let is_multi = bam::get_aux_int(record, b"NH").is_some_and(|nh| nh > 1);
     if is_multi {
         result.total_multi += 1;
     }
@@ -832,7 +830,7 @@ fn process_counting_record(
     // Find gene overlaps using CIGAR-aware aligned blocks
     gene_hits.clear();
     if let Some(chrom_idx) = index.get(chrom) {
-        cigar_to_aligned_blocks(record.pos() as u64, &record.cigar(), aligned_blocks_buf);
+        cigar_to_aligned_blocks(bam::pos_0based(record) as u64, record, aligned_blocks_buf);
 
         for &(block_start, block_end) in aligned_blocks_buf.iter() {
             chrom_idx.query(block_start as i32, (block_end - 1) as i32, |node| {
@@ -877,13 +875,13 @@ fn process_counting_record(
     }
 
     // --- Paired-end counting: buffer mates and combine ---
-    let qname_hash = hash_qname(record.qname());
-    let own_pos = record.pos();
-    let own_tid = record.tid();
-    let mate_pos_val = record.mpos();
-    let mate_tid = record.mtid();
+    let qname_hash = hash_qname(bam::qname(record));
+    let own_pos = bam::pos_0based(record);
+    let own_tid = bam::tid(record);
+    let mate_pos_val = bam::mpos_0based(record);
+    let mate_tid = bam::mtid(record);
 
-    let hi_tag: i32 = crate::rna::bam_flags::get_aux_int(record, b"HI").map_or(-1, |v| v as i32);
+    let hi_tag: i32 = bam::get_aux_int(record, b"HI").map_or(-1, |v| v as i32);
 
     let buffer_key: MateBufferKey = if is_read1 {
         (qname_hash, own_tid, own_pos, mate_tid, mate_pos_val, hi_tag)
@@ -1007,32 +1005,36 @@ fn process_chromosome_batch(
     let tid_to_rseqc_chrom_upper: Vec<String> =
         tid_to_gtf_chrom.iter().map(|s| s.to_uppercase()).collect();
 
-    // Open an indexed reader for this thread (supports BAM with .bai/.csi and CRAM with .crai)
-    let mut bam = bam::IndexedReader::from_path(bam_path)
+    // Open an indexed reader for this thread (supports BAM with .bai/.csi).
+    // TODO(noodles-threading): re-enable multithreaded BGZF via
+    // noodles_bgzf::MultithreadedReader. The previous rust-htslib path used
+    // `set_threads(htslib_threads)` to enable parallel BGZF block decompression
+    // per worker; the noodles `IndexedReader` builder only exposes a
+    // single-threaded BGZF reader today.
+    let _ = (htslib_threads, reference);
+    let (mut reader, header) = bam::open_indexed(std::path::Path::new(bam_path))
         .with_context(|| format!("Failed to open indexed alignment file: {}", bam_path))?;
-    if let Some(ref_path) = reference {
-        bam.set_reference(ref_path)
-            .with_context(|| format!("Failed to set reference FASTA: {}", ref_path))?;
-    }
-    if htslib_threads > 0 {
-        bam.set_threads(htslib_threads)
-            .context("Failed to set htslib decompression threads")?;
-    }
 
     // Reusable buffers
     let mut aligned_blocks_buf: Vec<(u64, u64)> = Vec::new();
     let mut gene_hits: Vec<GeneIdx> = Vec::new();
     let mut biotype_hits_buf: Vec<u16> = Vec::new();
     let mut mate_buffer: HashMap<MateBufferKey, MateInfo> = HashMap::new();
-    let mut record = bam::Record::new();
 
     for &tid in tids {
-        // Seek to this chromosome
-        bam.fetch(tid)
-            .with_context(|| format!("Failed to seek to tid {}", tid))?;
+        // Seek to this chromosome via a region spanning the entire reference
+        // sequence. We look up the BAM-side reference name (not the GTF-mapped
+        // one) so the index lookup matches the BAM header exactly.
+        let chrom_name = &tid_to_name[tid as usize];
+        let region: Region = chrom_name
+            .parse()
+            .with_context(|| format!("Failed to build region for chromosome {}", chrom_name))?;
+        let query = reader
+            .query(&header, &region)
+            .with_context(|| format!("Failed to seek to chromosome {}", chrom_name))?;
 
-        while let Some(read_result) = bam.read(&mut record) {
-            read_result.context("Error reading alignment record")?;
+        for read_result in query.records() {
+            let record = read_result.context("Error reading alignment record")?;
             result.total_reads += 1;
 
             // Periodic progress update (approximate, using atomic counter)
@@ -1050,7 +1052,7 @@ fn process_chromosome_batch(
             if let (Some(ref mut accums), Some(annots), Some(cfg)) =
                 (&mut rseqc_accums, rseqc_annotations, rseqc_config)
             {
-                let rec_tid = record.tid();
+                let rec_tid = bam::tid(&record);
                 let (chrom, chrom_upper) =
                     if rec_tid >= 0 && (rec_tid as usize) < tid_to_rseqc_chrom.len() {
                         (
@@ -1067,7 +1069,7 @@ fn process_chromosome_batch(
             // Qualimap accumulator handles its own filtering (unmapped, secondary,
             // QC-fail, supplementary, NH>1) and uses enclosure-based gene assignment.
             if let (Some(ref mut qm), Some(qm_index)) = (&mut result.qualimap, qualimap_index) {
-                let tid = record.tid();
+                let tid = bam::tid(&record);
                 if tid >= 0 && (tid as usize) < tid_to_gtf_chrom.len() {
                     let qm_chrom = &tid_to_gtf_chrom[tid as usize];
                     qm.process_read(&record, qm_chrom, qm_index);
@@ -1075,7 +1077,7 @@ fn process_chromosome_batch(
             }
 
             // Resolve chromosome for gene counting
-            let rec_tid = record.tid();
+            let rec_tid = bam::tid(&record);
             let chrom = if rec_tid >= 0 && (rec_tid as usize) < tid_to_gtf_chrom.len() {
                 tid_to_gtf_chrom[rec_tid as usize].as_str()
             } else {
@@ -1162,20 +1164,11 @@ pub fn count_reads(
 
     // Get chromosome names from header using a temporary reader.
     let (tid_to_name, tid_to_len): (Vec<String>, Vec<u64>) = {
-        let mut bam = bam::Reader::from_path(bam_path)
+        let (_reader, header) = bam::open(std::path::Path::new(bam_path))
             .with_context(|| format!("Failed to open alignment file: {}", bam_path))?;
-        if let Some(ref_path) = reference {
-            bam.set_reference(ref_path)
-                .with_context(|| format!("Failed to set reference FASTA: {}", ref_path))?;
-        }
-        let header = bam.header().clone();
-
-        let names = (0..header.target_count())
-            .map(|tid| String::from_utf8_lossy(header.tid2name(tid)).to_string())
-            .collect();
-        let lengths = (0..header.target_count())
-            .map(|tid| header.target_len(tid).unwrap_or(0))
-            .collect();
+        let refs = bam::reference_sequences(&header);
+        let names: Vec<String> = refs.iter().map(|(n, _)| n.clone()).collect();
+        let lengths: Vec<u64> = refs.iter().map(|(_, l)| *l).collect();
         (names, lengths)
     };
 
@@ -1184,19 +1177,8 @@ pub fn count_reads(
     }
 
     // Check if an alignment index is available for parallel processing
-    // (BAM uses .bai/.csi, CRAM uses .crai; SAM has no index format)
-    let use_parallel = threads > 1 && {
-        let idx_check = bam::IndexedReader::from_path(bam_path);
-        if let Ok(mut reader) = idx_check {
-            if let Some(ref_path) = reference {
-                reader.set_reference(ref_path).is_ok()
-            } else {
-                true
-            }
-        } else {
-            false
-        }
-    };
+    // (BAM uses .bai/.csi).
+    let use_parallel = threads > 1 && bam::open_indexed(std::path::Path::new(bam_path)).is_ok();
     if threads > 1 && !use_parallel {
         warn!(
             "Alignment index not found for {}; falling back to single-threaded processing. \
@@ -1352,27 +1334,22 @@ pub fn count_reads(
             .map(|s| s.to_uppercase())
             .collect();
 
-        let mut bam = bam::Reader::from_path(bam_path)
+        // TODO(noodles-threading): re-enable multithreaded BGZF via
+        // noodles_bgzf::MultithreadedReader. The previous rust-htslib path used
+        // `set_threads(threads-1)` here for single-threaded record dispatch with
+        // multi-threaded block decompression.
+        let _ = reference;
+        let (mut reader, _header) = bam::open(std::path::Path::new(bam_path))
             .with_context(|| format!("Failed to open alignment file: {}", bam_path))?;
-        if let Some(ref_path) = reference {
-            bam.set_reference(ref_path)
-                .with_context(|| format!("Failed to set reference FASTA: {}", ref_path))?;
-        }
-        // Enable htslib multi-threaded decompression for the single-threaded path
-        if threads > 1 {
-            bam.set_threads(threads.saturating_sub(1))
-                .context("Failed to set htslib decompression threads")?;
-        }
 
         // Reusable buffers
         let mut aligned_blocks_buf: Vec<(u64, u64)> = Vec::new();
         let mut gene_hits: Vec<GeneIdx> = Vec::new();
         let mut biotype_hits_buf: Vec<u16> = Vec::new();
         let mut mate_buffer: HashMap<MateBufferKey, MateInfo> = HashMap::new();
-        let mut record = bam::Record::new();
 
-        while let Some(read_result) = bam.read(&mut record) {
-            read_result.context("Error reading alignment record")?;
+        for read_result in reader.records() {
+            let record = read_result.context("Error reading alignment record")?;
             result.total_reads += 1;
 
             let prev = global_read_counter.fetch_add(1, Ordering::Relaxed);
@@ -1382,14 +1359,14 @@ pub fn count_reads(
                 }
             }
 
-            let flags = record.flags();
+            let flags = u16::from(record.flags());
 
             // --- RSeQC per-read dispatch (before counting filters) ---
             // bam_stat needs to see ALL records including QC-fail/dup/secondary
             if let (Some(ref mut accums), Some(annots), Some(cfg)) =
                 (&mut rseqc_accums, rseqc_annotations, rseqc_config)
             {
-                let tid = record.tid();
+                let tid = bam::tid(&record);
                 let (chrom, chrom_upper) = if tid >= 0 && (tid as usize) < tid_to_rseqc_chrom.len()
                 {
                     (
@@ -1406,7 +1383,7 @@ pub fn count_reads(
             // Qualimap has its own filtering (M-only CIGAR, NH>1, enclosure-based)
             if let (Some(ref mut qm_accum), Some(qm_index)) = (&mut qualimap_accum, qualimap_index)
             {
-                let tid = record.tid();
+                let tid = bam::tid(&record);
                 if tid >= 0 && (tid as usize) < tid_to_rseqc_chrom.len() {
                     let chrom = &tid_to_rseqc_chrom[tid as usize];
                     qm_accum.process_read(&record, chrom, qm_index);
@@ -1418,7 +1395,7 @@ pub fn count_reads(
             }
 
             // Resolve chromosome for gene counting
-            let tid = record.tid();
+            let tid = bam::tid(&record);
             let chrom = if tid >= 0 && (tid as usize) < tid_to_rseqc_chrom.len() {
                 tid_to_rseqc_chrom[tid as usize].as_str()
             } else {
@@ -1452,24 +1429,22 @@ pub fn count_reads(
     // BAM file. We sweep them here so that bam_stat totals, fc_unmapped,
     // and RSeQC accumulators see every record.
     if use_parallel {
-        let mut bam = bam::IndexedReader::from_path(bam_path).with_context(|| {
-            format!(
-                "Failed to open indexed BAM for unmapped sweep: {}",
-                bam_path
-            )
-        })?;
-        if let Some(ref_path) = reference {
-            bam.set_reference(ref_path)
-                .with_context(|| format!("Failed to set reference FASTA: {}", ref_path))?;
-        }
-        bam.fetch(FetchDefinition::Unmapped)
+        let _ = reference;
+        let (mut reader, _header) = bam::open_indexed(std::path::Path::new(bam_path))
+            .with_context(|| {
+                format!(
+                    "Failed to open indexed BAM for unmapped sweep: {}",
+                    bam_path
+                )
+            })?;
+        let query = reader
+            .query_unmapped()
             .context("Failed to seek to unmapped segment")?;
 
-        let mut record = bam::Record::new();
         let mut unmapped_count: u64 = 0;
 
-        while let Some(read_result) = bam.read(&mut record) {
-            read_result.context("Error reading unmapped record")?;
+        for read_result in query {
+            let record = read_result.context("Error reading unmapped record")?;
             unmapped_count += 1;
             merged.total_reads += 1;
 
@@ -1482,7 +1457,7 @@ pub fn count_reads(
 
             // Qualimap dispatch — count unmapped reads for not_aligned
             if let Some(ref mut qm) = merged.qualimap {
-                let tid = record.tid();
+                let tid = bam::tid(&record);
                 if tid >= 0 {
                     // Mapped read in the unmapped segment (placed at mate's position).
                     // Pass to process_read() for full Qualimap processing.
@@ -1491,7 +1466,7 @@ pub fn count_reads(
                             qm.process_read(&record, &tid_to_name[tid as usize], qm_index);
                         }
                     }
-                } else if record.flags() & BAM_FUNMAP != 0 {
+                } else if u16::from(record.flags()) & BAM_FUNMAP != 0 {
                     // Truly unmapped read (tid=-1): no chromosome to resolve,
                     // but we must count it as not_aligned. This is all that
                     // process_read() does for unmapped reads (see accumulator.rs).
@@ -1499,7 +1474,7 @@ pub fn count_reads(
                 }
             }
 
-            let flags = record.flags();
+            let flags = u16::from(record.flags());
             if flags & BAM_FUNMAP != 0 {
                 merged.fc_unmapped += 1;
                 if paired && flags & BAM_FMUNMAP == 0 {

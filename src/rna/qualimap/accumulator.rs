@@ -9,9 +9,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::rna::bam_io::{self as bam, CigarKind};
 use coitrees::IntervalTree;
-use rust_htslib::bam;
-use rust_htslib::bam::record::Cigar;
 
 use crate::cli::Strandedness;
 
@@ -233,12 +232,12 @@ impl QualimapAccum {
     /// * `chrom` - Chromosome name for this record.
     /// * `index` - The Qualimap annotation index.
     pub fn process_read(&mut self, record: &bam::Record, chrom: &str, index: &QualimapIndex) {
-        let flags = record.flags();
+        let flags = u16::from(record.flags());
         log::trace!(
             "QM process_read chrom={} flags={} pos={}",
             chrom,
             flags,
-            record.pos()
+            bam::pos_0based(record)
         );
 
         // Skip unmapped
@@ -704,7 +703,7 @@ impl QualimapAccum {
 
 /// Extract NH tag (number of reported alignments) from a BAM record.
 fn get_nh_tag(record: &bam::Record) -> Option<u32> {
-    crate::rna::bam_flags::get_aux_int(record, b"NH").map(|v| v as u32)
+    bam::get_aux_int(record, b"NH").map(|v| v as u32)
 }
 
 /// Extract M-only aligned blocks from a BAM record's CIGAR.
@@ -739,16 +738,17 @@ fn get_nh_tag(record: &bam::Record) -> Option<u32> {
 fn extract_m_blocks_and_junctions(
     record: &bam::Record,
 ) -> (Vec<(i32, i32)>, usize, Vec<JunctionMotif>, Vec<(i32, i32)>) {
+    use CigarKind as K;
     let cigar = record.cigar();
-    let seq = record.seq();
-    let seq_len = seq.len();
+    let seq_len = record.sequence().len();
 
     let mut blocks = Vec::new();
     let mut motifs = Vec::new();
     let mut junction_ref_positions = Vec::new();
     let mut n_op_count: usize = 0;
-    let mut ref_pos = record.pos() as i32; // 0-based
-    let alignment_start_1based = record.pos() as i32 + 1;
+    let pos0 = bam::pos_0based(record) as i32;
+    let mut ref_pos = pos0; // 0-based
+    let alignment_start_1based = pos0 + 1;
     // seq_pos tracks query position for junction motif extraction and
     // junction position calculation (Qualimap's posInRead).
     // ref_pos for extract_m_blocks uses its own tracking with the Qualimap
@@ -759,21 +759,23 @@ fn extract_m_blocks_and_junctions(
     // We run both in one pass by tracking seq_pos alongside ref_pos.
 
     for op in cigar.iter() {
-        match op {
+        let op = op.expect("malformed CIGAR");
+        let len_u = op.len();
+        let len_i = len_u as i32;
+        match op.kind() {
             // Qualimap only creates alignment blocks for M (match/mismatch),
             // not for = (sequence match) or X (sequence mismatch).
-            Cigar::Match(len) => {
-                let len = *len as i32;
-                blocks.push((ref_pos, ref_pos + len));
-                ref_pos += len;
-                seq_pos += len as usize;
+            K::Match => {
+                blocks.push((ref_pos, ref_pos + len_i));
+                ref_pos += len_i;
+                seq_pos += len_u;
             }
             // Qualimap bug: EQ and X advance offset but don't create blocks.
-            Cigar::Equal(len) | Cigar::Diff(len) => {
-                ref_pos += *len as i32;
-                seq_pos += *len as usize;
+            K::SequenceMatch | K::SequenceMismatch => {
+                ref_pos += len_i;
+                seq_pos += len_u;
             }
-            Cigar::RefSkip(len) => {
+            K::Skip => {
                 // Junction motif extraction (N-operations).
                 // Qualimap increments numReadsWithJunction for every N-op,
                 // regardless of whether the motif can be extracted.
@@ -783,7 +785,7 @@ fn extract_m_blocks_and_junctions(
                 // Matches Qualimap Java: posInRef1 = alignmentStart + posInRead,
                 // posInRef2 = posInRef1 + clippedLength.
                 let pos_ref1 = alignment_start_1based + seq_pos as i32;
-                let pos_ref2 = pos_ref1 + *len as i32;
+                let pos_ref2 = pos_ref1 + len_i;
                 junction_ref_positions.push((pos_ref1, pos_ref2));
 
                 // Extract donor motif: 2bp at end of preceding exon in read
@@ -791,8 +793,14 @@ fn extract_m_blocks_and_junctions(
                 // Guard matches Qualimap: posInRead - 2 > 0, i.e. posInRead >= 3.
                 // This requires at least 3 query bases before the junction.
                 if seq_pos > 2 && seq_pos + 1 < seq_len {
-                    let donor = [seq.encoded_base(seq_pos - 2), seq.encoded_base(seq_pos - 1)];
-                    let acceptor = [seq.encoded_base(seq_pos), seq.encoded_base(seq_pos + 1)];
+                    let donor = [
+                        bam::encoded_base(record, seq_pos - 2),
+                        bam::encoded_base(record, seq_pos - 1),
+                    ];
+                    let acceptor = [
+                        bam::encoded_base(record, seq_pos),
+                        bam::encoded_base(record, seq_pos + 1),
+                    ];
 
                     let donor_ascii = [decode_base(donor[0]), decode_base(donor[1])];
                     let acceptor_ascii = [decode_base(acceptor[0]), decode_base(acceptor[1])];
@@ -803,20 +811,20 @@ fn extract_m_blocks_and_junctions(
                     });
                 }
 
-                ref_pos += *len as i32;
+                ref_pos += len_i;
                 // N does not advance query (seq_pos unchanged)
             }
             // Qualimap bug: insertions and soft-clips advance the reference
             // position even though they only consume query bases.
-            Cigar::Ins(len) | Cigar::SoftClip(len) => {
-                ref_pos += *len as i32;
-                seq_pos += *len as usize;
+            K::Insertion | K::SoftClip => {
+                ref_pos += len_i;
+                seq_pos += len_u;
             }
-            Cigar::Del(len) => {
-                ref_pos += *len as i32;
+            K::Deletion => {
+                ref_pos += len_i;
                 // D does not advance query
             }
-            Cigar::HardClip(_) | Cigar::Pad(_) => {}
+            K::HardClip | K::Pad => {}
         }
     }
 
@@ -991,11 +999,11 @@ fn find_enclosing_genes(
 ///
 /// Uses FNV-1a hash of qname + r1-centric ordering of positions.
 fn make_mate_key(record: &bam::Record) -> MateKey {
-    let qname_hash = hash_qname(record.qname());
-    let tid = record.tid();
-    let pos = record.pos();
-    let mate_tid = record.mtid();
-    let mate_pos = record.mpos();
+    let qname_hash = hash_qname(bam::qname(record));
+    let tid = bam::tid(record);
+    let pos = bam::pos_0based(record);
+    let mate_tid = bam::mtid(record);
+    let mate_pos = bam::mpos_0based(record);
 
     // Always store with read1 position first for consistent lookup
     if tid < mate_tid || (tid == mate_tid && pos <= mate_pos) {

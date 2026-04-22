@@ -525,13 +525,13 @@ fn write_gcc<W: std::io::Write>(
     for cycle in 0..max_cycles {
         let mut combined = [0u64; 6];
         if cycle < fbc.len() {
-            for j in 0..6 {
-                combined[j] += fbc[cycle][j];
+            for (slot, v) in combined.iter_mut().zip(fbc[cycle].iter()) {
+                *slot += v;
             }
         }
         if cycle < lbc.len() {
-            for j in 0..6 {
-                combined[j] += lbc[cycle][j];
+            for (slot, v) in combined.iter_mut().zip(lbc[cycle].iter()) {
+                *slot += v;
             }
         }
         // Denominator is A+C+G+T only (first 4 elements), matching upstream
@@ -1006,18 +1006,18 @@ fn write_gc_depth(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rna::bam_io as bam;
     use crate::rna::rseqc::accumulators::BamStatAccum;
-    use rust_htslib::bam::{self, Read as BamRead};
     use std::io::Read;
+    use std::path::Path;
     #[test]
     fn test_stats_sn_format() {
-        let mut reader =
-            bam::Reader::from_path("tests/data/test.bam").expect("Failed to open test.bam");
+        let (mut reader, _header) =
+            bam::open(Path::new("tests/data/test.bam")).expect("Failed to open test.bam");
         let mut accum = BamStatAccum::default();
-        let mut record = bam::Record::new();
 
-        while let Some(res) = reader.read(&mut record) {
-            res.expect("Error reading BAM record");
+        for res in reader.records() {
+            let record = res.expect("Error reading BAM record");
             accum.process_read(&record, 30);
         }
 

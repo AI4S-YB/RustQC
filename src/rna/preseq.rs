@@ -4,9 +4,9 @@
 //! sequencing depth using the Good-Toulmin rational function extrapolation
 //! method, matching the behavior of preseq v3.
 
+use crate::rna::bam_io::{self as bam};
 use anyhow::{bail, Context, Result};
 use log::debug;
-use rust_htslib::bam;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
@@ -144,27 +144,28 @@ impl PreseqAccum {
     /// * `record` - The BAM record to process.
     pub fn process_read(&mut self, record: &bam::Record) {
         // Filter: primary + mapped only (matches preseq v3.2.0 empirical behavior).
-        if record.tid() < 0 {
+        if bam::tid(record) < 0 {
             return;
         }
-        if record.is_secondary() || record.is_supplementary() {
+        let flags = record.flags();
+        if flags.is_secondary() || flags.is_supplementary() {
             return;
         }
         self.n_mates_processed += 1;
 
-        let tid = record.tid();
-        let start = record.pos();
-        let end = record.cigar().end_pos();
+        let tid = bam::tid(record);
+        let start = bam::pos_0based(record);
+        let end = bam::end_pos_0based(record);
 
         let info = MateInfo { tid, start, end };
 
         // Check if this read is part of a pair
-        if record.is_paired() {
+        if flags.is_segmented() {
             // Use a FNV-1a hash of the qname as the mate-buffer key to avoid
             // allocating a Vec<u8> per read. Collisions are negligible for
             // typical BAM qnames; the MateInfo already stores coordinates that
             // would detect a spurious match if needed.
-            let qname_hash = fnv1a_hash_bytes(record.qname());
+            let qname_hash = fnv1a_hash_bytes(bam::qname(record));
 
             if let Some(mate) = self.dangling_mates.remove(&qname_hash) {
                 // Found the mate — try to merge
