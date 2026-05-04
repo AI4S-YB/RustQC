@@ -4,7 +4,7 @@
 //! uniformity across sampled exonic positions. Reimplementation of
 //! RSeQC's `tin.py` tool.
 
-use crate::rna::bam_io::{self as bam, CigarKind};
+use crate::bam_io::{self as bam, CigarKind};
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, Hasher};
 use std::io::Write;

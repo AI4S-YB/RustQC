@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use log::debug;
 
 use crate::gtf::Gene;
-use crate::rna::bam_io::CigarKind;
+use crate::bam_io::CigarKind;
 
 // ===================================================================
 // CIGAR intron extraction
@@ -25,7 +25,7 @@ use crate::rna::bam_io::CigarKind;
 /// # Arguments
 /// * `start_pos` - Alignment start position (0-based, from BAM record).
 /// * `cigar` - CIGAR operations as `(kind, len)` pairs; callers typically
-///   obtain these via [`crate::rna::bam_io::cigar_ops`].
+///   obtain these via [`crate::bam_io::cigar_ops`].
 ///
 /// # Returns
 /// Vector of `(intron_start, intron_end)` tuples (0-based coordinates).

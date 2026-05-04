@@ -4,14 +4,14 @@
 //! sequencing depth using the Good-Toulmin rational function extrapolation
 //! method, matching the behavior of preseq v3.
 
-use crate::rna::bam_io::{self as bam};
+use crate::bam_io::{self as bam};
 use anyhow::{bail, Context, Result};
 use log::debug;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
-use super::cpp_rng::CppMt19937;
+use crate::cpp_rng::CppMt19937;
 
 use crate::config::PreseqConfig;
 

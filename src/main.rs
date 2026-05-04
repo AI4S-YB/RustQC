@@ -9,12 +9,16 @@
 //! (flagstat, idxstats, stats), and Qualimap gene body coverage profiling.
 //! Individual tools can be disabled via the YAML config file.
 
+mod bam_flags;
+mod bam_io;
 mod citations;
 mod cli;
 mod config;
+mod cpp_rng;
 mod cpu;
 mod gtf;
 mod io;
+mod preseq;
 mod rna;
 mod summary;
 mod ui;
@@ -28,8 +32,6 @@ use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ui::{format_count, format_duration, format_pct, Ui, Verbosity};
-
-use crate::rna::bam_io;
 
 use rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 
@@ -1840,14 +1842,14 @@ fn write_rseqc_outputs(
             total_reads,
             n_distinct,
         );
-        match rna::preseq::estimate_complexity(
+        match preseq::estimate_complexity(
             &histogram,
             total_reads,
             n_distinct,
             &params.config.preseq,
         ) {
             Ok(result) => {
-                rna::preseq::write_output(
+                preseq::write_output(
                     &result,
                     &output_path,
                     params.config.preseq.confidence_level,
