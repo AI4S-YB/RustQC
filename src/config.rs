@@ -30,6 +30,23 @@ pub struct Config {
     /// RNA-Seq QC configuration (matches the `rna` subcommand).
     #[serde(default)]
     pub rna: RnaConfig,
+    /// ATAC-Seq QC configuration (matches the `atac` subcommand).
+    #[serde(default)]
+    pub atac: AtacConfig,
+}
+
+/// ATAC-seq QC configuration (YAML-backed).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AtacConfig {
+    /// Mitochondrial chromosome name; auto-detected when None.
+    pub mito_chrom: Option<String>,
+    /// TSSEscore flank window in bp (default 1000).
+    pub tsse_flank: Option<u32>,
+    /// Emit Tn5-shifted BAM.
+    pub emit_shifted_bam: bool,
+    /// Emit NFR/mono/di/tri BAMs.
+    pub emit_split_bams: bool,
 }
 
 /// RNA-Seq QC configuration.
