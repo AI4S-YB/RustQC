@@ -90,6 +90,13 @@ pub mod nfr_score;
 pub mod pe_check;
 pub mod pt_score;
 pub mod tss_cov;
+pub mod tsse;
+
+#[allow(dead_code)]
+pub fn resolve_flank(tsse_flank: u32) -> u32 {
+    const PT_REQUIREMENT: u32 = 3000;
+    tsse_flank.max(PT_REQUIREMENT)
+}
 
 #[cfg(test)]
 mod tests {
@@ -102,6 +109,12 @@ mod tests {
             Commands::Atac(a) => a,
             _ => panic!("expected Atac"),
         }
+    }
+
+    #[test]
+    fn flank_floor_at_3000() {
+        assert_eq!(resolve_flank(1000), 3000);
+        assert_eq!(resolve_flank(5000), 5000);
     }
 
     #[test]
