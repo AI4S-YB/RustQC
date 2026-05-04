@@ -437,6 +437,7 @@ pub fn attribute_exists_in_gtf(path: &str, attribute_name: &str, max_lines: usiz
 /// Strand of a genomic feature.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum Strand {
     Plus = 0,
     Minus = 1,
@@ -444,6 +445,7 @@ pub enum Strand {
 
 /// A transcription start site (TSS) coordinate.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub struct Tss {
     /// Chromosome/contig name
     pub chrom: String,
@@ -454,6 +456,7 @@ pub struct Tss {
 }
 
 /// A lightweight transcript record parsed from GTF `transcript` feature lines.
+#[allow(dead_code)]
 struct TranscriptRecord {
     chrom: String,
     start: u64,
@@ -466,6 +469,7 @@ struct TranscriptRecord {
 /// Returns a `Vec` of lightweight [`TranscriptRecord`] structs.
 /// Falls back to deriving transcript-like records from `exon` features
 /// grouped by (gene_id, transcript_id) if no `transcript` lines are found.
+#[allow(dead_code)]
 fn read_transcript_records(path: &std::path::Path) -> Result<Vec<TranscriptRecord>> {
     let reader = crate::io::open_reader(path.to_str().unwrap_or(""))
         .with_context(|| format!("Failed to open GTF file: {}", path.display()))?;
@@ -538,6 +542,7 @@ fn read_transcript_records(path: &std::path::Path) -> Result<Vec<TranscriptRecor
 /// transcripts the TSS is the transcript end. Transcripts with unknown strand
 /// (`'.'` or `'?'`) are skipped. The result is sorted by chromosome, then
 /// position, then strand.
+#[allow(dead_code)]
 pub fn extract_tss(path: &std::path::Path) -> Result<Vec<Tss>> {
     let transcripts = read_transcript_records(path)?;
     let mut set: std::collections::HashSet<Tss> = std::collections::HashSet::new();

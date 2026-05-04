@@ -19,6 +19,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ResolvedAtacConfig {
     pub inputs: Vec<String>,
     pub gtf: String,

@@ -50,6 +50,7 @@ pub struct Cli {
 
 /// Available analysis subcommands.
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// RNA-Seq QC — single-pass analysis of BAM/SAM/CRAM files.
     ///

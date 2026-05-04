@@ -32,6 +32,7 @@ pub struct Config {
     pub rna: RnaConfig,
     /// ATAC-Seq QC configuration (matches the `atac` subcommand).
     #[serde(default)]
+    #[allow(dead_code)]
     pub atac: AtacConfig,
 }
 
