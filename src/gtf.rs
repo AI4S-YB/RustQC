@@ -434,6 +434,139 @@ pub fn attribute_exists_in_gtf(path: &str, attribute_name: &str, max_lines: usiz
     false
 }
 
+/// Strand of a genomic feature.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Strand {
+    Plus = 0,
+    Minus = 1,
+}
+
+/// A transcription start site (TSS) coordinate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Tss {
+    /// Chromosome/contig name
+    pub chrom: String,
+    /// 1-based position (start for + strand, end for - strand)
+    pub pos: u64,
+    /// Strand of the originating transcript
+    pub strand: Strand,
+}
+
+/// A lightweight transcript record parsed from GTF `transcript` feature lines.
+struct TranscriptRecord {
+    chrom: String,
+    start: u64,
+    end: u64,
+    strand: char,
+}
+
+/// Parse a GTF file and collect all `transcript` feature lines.
+///
+/// Returns a `Vec` of lightweight [`TranscriptRecord`] structs.
+/// Falls back to deriving transcript-like records from `exon` features
+/// grouped by (gene_id, transcript_id) if no `transcript` lines are found.
+fn read_transcript_records(path: &std::path::Path) -> Result<Vec<TranscriptRecord>> {
+    let reader = crate::io::open_reader(path.to_str().unwrap_or(""))
+        .with_context(|| format!("Failed to open GTF file: {}", path.display()))?;
+
+    let mut transcript_lines: Vec<TranscriptRecord> = Vec::new();
+    let mut exon_records: std::collections::HashMap<(String, String), TranscriptRecord> =
+        std::collections::HashMap::new();
+    let mut has_transcript_features = false;
+
+    for line in reader.lines() {
+        let line = line.context("Failed to read line from GTF file")?;
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 9 {
+            continue;
+        }
+        let feature_type = fields[2];
+        let chrom = fields[0].to_string();
+        let start: u64 = match fields[3].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let end: u64 = match fields[4].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let strand = fields[6].chars().next().unwrap_or('.');
+        let attr_str = fields[8];
+
+        if feature_type == "transcript" {
+            has_transcript_features = true;
+            transcript_lines.push(TranscriptRecord {
+                chrom,
+                start,
+                end,
+                strand,
+            });
+        } else if feature_type == "exon" && !has_transcript_features {
+            // Fall-back: derive transcripts from exon features grouped by transcript_id.
+            let gene_id = get_attribute(attr_str, "gene_id").unwrap_or_default();
+            let tx_id = get_attribute(attr_str, "transcript_id").unwrap_or_default();
+            let key = (gene_id, tx_id);
+            exon_records
+                .entry(key)
+                .and_modify(|r| {
+                    r.start = r.start.min(start);
+                    r.end = r.end.max(end);
+                })
+                .or_insert(TranscriptRecord {
+                    chrom,
+                    start,
+                    end,
+                    strand,
+                });
+        }
+    }
+
+    if has_transcript_features {
+        Ok(transcript_lines)
+    } else {
+        Ok(exon_records.into_values().collect())
+    }
+}
+
+/// Extract deduplicated TSS coordinates from a GTF file.
+///
+/// For `+` strand transcripts the TSS is the transcript start; for `-` strand
+/// transcripts the TSS is the transcript end. Transcripts with unknown strand
+/// (`'.'` or `'?'`) are skipped. The result is sorted by chromosome, then
+/// position, then strand.
+pub fn extract_tss(path: &std::path::Path) -> Result<Vec<Tss>> {
+    let transcripts = read_transcript_records(path)?;
+    let mut set: std::collections::HashSet<Tss> = std::collections::HashSet::new();
+    for t in transcripts {
+        let strand = match t.strand {
+            '+' => Strand::Plus,
+            '-' => Strand::Minus,
+            _ => continue,
+        };
+        let pos = match strand {
+            Strand::Plus => t.start,
+            Strand::Minus => t.end,
+        };
+        set.insert(Tss {
+            chrom: t.chrom,
+            pos,
+            strand,
+        });
+    }
+    let mut v: Vec<Tss> = set.into_iter().collect();
+    v.sort_by(|a, b| {
+        a.chrom
+            .cmp(&b.chrom)
+            .then(a.pos.cmp(&b.pos))
+            .then((a.strand as u8).cmp(&(b.strand as u8)))
+    });
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,5 +889,27 @@ chr1\ttest\tstop_codon\t1500\t1502\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\
         let t1 = &genes["G1"].transcripts[0];
         assert_eq!(t1.cds_start, None);
         assert_eq!(t1.cds_end, None);
+    }
+
+    #[test]
+    fn tss_extraction_deduplicates() {
+        use std::io::Write as _;
+        // Two transcripts share the same TSS (pos=100 on + strand); one - strand
+        // transcript has TSS at end (pos=1500).
+        let gtf = "\
+chr1\ttest\ttranscript\t100\t500\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t1\";\n\
+chr1\ttest\ttranscript\t100\t600\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t2\";\n\
+chr1\ttest\ttranscript\t900\t1500\t.\t-\t.\tgene_id \"g2\"; transcript_id \"t3\";\n";
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.as_file_mut().write_all(gtf.as_bytes()).unwrap();
+        let tss = extract_tss(tmp.path()).unwrap();
+        // + strand TSS = start (100); - strand TSS = end (1500). After dedup: 2 entries.
+        assert_eq!(tss.len(), 2);
+        assert!(tss
+            .iter()
+            .any(|t| t.chrom == "chr1" && t.pos == 100 && t.strand == Strand::Plus));
+        assert!(tss
+            .iter()
+            .any(|t| t.chrom == "chr1" && t.pos == 1500 && t.strand == Strand::Minus));
     }
 }
