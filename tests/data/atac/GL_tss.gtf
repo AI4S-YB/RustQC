@@ -1,0 +1,27 @@
+#!genome-build GRCh37/hg19
+#!genome-version hg19
+# Synthetic GTF for RustQC Phase 14 numerical fidelity tests.
+# Chromosomes: chr1 only (hg19). All GL1-4 BAMs align exclusively to chr1.
+# GL2/GL3/GL4 reads are concentrated in chr1:565,550-996,878.
+# GL1 reads span chr1:565,608-249,202,181 (genome-wide).
+#
+# TSS extraction rules (as implemented in src/gtf.rs::extract_tss):
+#   + strand transcript: TSS = exon start (leftmost position, 1-based)
+#   - strand transcript: TSS = exon end   (rightmost position, 1-based)
+#
+# This file is used by BOTH the Rust integration tests AND run_r_reference.R.
+# If BAM chromosomes change (unlikely: GL1-4 are fixed hg19 fixtures), regenerate this file.
+chr1	synthetic	exon	565100	567000	.	+	.	gene_id "g01"; transcript_id "t01";
+chr1	synthetic	exon	566500	568500	.	-	.	gene_id "g02"; transcript_id "t02";
+chr1	synthetic	exon	570000	572000	.	+	.	gene_id "g03"; transcript_id "t03";
+chr1	synthetic	exon	580000	585000	.	-	.	gene_id "g04"; transcript_id "t04";
+chr1	synthetic	exon	620000	625000	.	+	.	gene_id "g05"; transcript_id "t05";
+chr1	synthetic	exon	700000	710000	.	-	.	gene_id "g06"; transcript_id "t06";
+chr1	synthetic	exon	800000	815000	.	+	.	gene_id "g07"; transcript_id "t07";
+chr1	synthetic	exon	900000	920000	.	-	.	gene_id "g08"; transcript_id "t08";
+chr1	synthetic	exon	20000000	20010000	.	+	.	gene_id "g09"; transcript_id "t09";
+chr1	synthetic	exon	50000000	50015000	.	-	.	gene_id "g10"; transcript_id "t10";
+chr1	synthetic	exon	100000000	100020000	.	+	.	gene_id "g11"; transcript_id "t11";
+chr1	synthetic	exon	150000000	150018000	.	-	.	gene_id "g12"; transcript_id "t12";
+chr1	synthetic	exon	200000000	200012000	.	+	.	gene_id "g13"; transcript_id "t13";
+chr1	synthetic	exon	240000000	240010000	.	-	.	gene_id "g14"; transcript_id "t14";
