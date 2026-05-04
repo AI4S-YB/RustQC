@@ -76,6 +76,36 @@ impl BamQcAccum {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct PbcChromAccum {
+    /// Fingerprint → count.
+    /// Key is a `(pos1, isize1, pos2, isize2)` tuple (all i64) to safely handle
+    /// genomes whose coordinates exceed u32::MAX without truncation.
+    pub fingerprints: HashMap<(i64, i64, i64, i64), u64>,
+}
+
+impl PbcChromAccum {
+    /// Record one PE fragment fingerprint.
+    /// `pos1`/`isize1` come from mate 1; `pos2`/`isize2` from mate 2.
+    /// For singletons, pass sentinel values (e.g. i64::MIN) for the missing mate.
+    pub fn add_pe(&mut self, pos1: i64, isize1: i64, pos2: i64, isize2: i64) {
+        *self.fingerprints.entry((pos1, isize1, pos2, isize2)).or_default() += 1;
+    }
+
+    /// Returns `(M_DISTINCT, M1, M2)` — used in the aggregate to compute NRF/PBC1/PBC2.
+    ///
+    /// - `M_DISTINCT`: number of unique fingerprints.
+    /// - `M1`: fingerprints occurring exactly once.
+    /// - `M2`: fingerprints occurring exactly twice.
+    pub fn summarize(&self) -> (u64, u64, u64) {
+        let m_distinct = self.fingerprints.len() as u64;
+        let m1 = self.fingerprints.values().filter(|&&c| c == 1).count() as u64;
+        let m2 = self.fingerprints.values().filter(|&&c| c == 2).count() as u64;
+        (m_distinct, m1, m2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +128,19 @@ mod tests {
         assert_eq!(a.mapq_hist[&30], 2);
         assert_eq!(a.mapq_hist[&60], 1);
         assert_eq!(a.mapq_hist[&0], 1);
+    }
+
+    #[test]
+    fn pbc_summarize_counts_singletons_and_doubletons() {
+        let mut p = PbcChromAccum::default();
+        p.add_pe(100, 200, 100, -200);
+        p.add_pe(100, 200, 100, -200); // duplicate of above
+        p.add_pe(300, 200, 300, -200); // singleton
+        p.add_pe(500, 200, 500, -200); // singleton
+        p.add_pe(500, 200, 500, -200); // doubleton with above
+        let (m_distinct, m1, m2) = p.summarize();
+        assert_eq!(m_distinct, 3);
+        assert_eq!(m1, 1);
+        assert_eq!(m2, 2);
     }
 }
