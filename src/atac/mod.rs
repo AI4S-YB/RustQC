@@ -86,6 +86,7 @@ pub mod frag_size;
 pub mod lib_complexity;
 pub mod mito;
 pub mod pe_check;
+pub mod tss_cov;
 
 #[cfg(test)]
 mod tests {
