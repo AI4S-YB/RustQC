@@ -89,6 +89,7 @@ pub mod mito;
 pub mod nfr_score;
 pub mod pe_check;
 pub mod pt_score;
+pub mod shift;
 pub mod tss_cov;
 pub mod tsse;
 
