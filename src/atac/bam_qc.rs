@@ -106,6 +106,57 @@ impl PbcChromAccum {
     }
 }
 
+/// Aggregate flag counters and per-chromosome PBC fingerprints into a `BamQcReport`.
+///
+/// Formulas match ATACseqQC 1.36.0 `R/bamQC.R`:
+/// - `NRF  = ΣM1 / totalQNAMEs`  (0.0 when totalQNAMEs == 0)
+/// - `PBC1 = ΣM1 / ΣM_DISTINCT`  (0.0 when ΣM_DISTINCT == 0)
+/// - `PBC2 = ΣM1 / max(1, ΣM2)`
+/// - `mapq_hist` sorted ascending by MAPQ value.
+pub fn finalize(flag_acc: &BamQcAccum, pbc_per_chrom: &[PbcChromAccum]) -> BamQcReport {
+    let total = flag_acc.total_records.max(1) as f64; // avoid div0 — total > 0 in real runs
+    let (mut sum_distinct, mut sum_m1, mut sum_m2) = (0u64, 0u64, 0u64);
+    for p in pbc_per_chrom {
+        let (md, m1, m2) = p.summarize();
+        sum_distinct += md;
+        sum_m1 += m1;
+        sum_m2 += m2;
+    }
+    let total_qnames = flag_acc.qnames.len() as u64;
+    let nrf = if total_qnames == 0 {
+        0.0
+    } else {
+        sum_m1 as f64 / total_qnames as f64
+    };
+    let pbc1 = if sum_distinct == 0 {
+        0.0
+    } else {
+        sum_m1 as f64 / sum_distinct as f64
+    };
+    let pbc2 = sum_m1 as f64 / sum_m2.max(1) as f64;
+
+    let mut mapq_hist: Vec<(u8, u64)> = flag_acc
+        .mapq_hist
+        .iter()
+        .map(|(k, v)| (*k, *v))
+        .collect();
+    mapq_hist.sort_by_key(|(k, _)| *k);
+
+    BamQcReport {
+        total_qnames,
+        duplicate_rate: flag_acc.n_dup as f64 / total,
+        mitochondria_rate: flag_acc.n_mito as f64 / total,
+        proper_pair_rate: flag_acc.n_proper_pair as f64 / total,
+        unmapped_rate: flag_acc.n_unmapped as f64 / total,
+        has_unmapped_mate_rate: flag_acc.n_unmapped_mate as f64 / total,
+        not_passing_qc_rate: flag_acc.n_qc_fail as f64 / total,
+        nrf,
+        pbc1,
+        pbc2,
+        mapq_hist,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +193,26 @@ mod tests {
         assert_eq!(m_distinct, 3);
         assert_eq!(m1, 1);
         assert_eq!(m2, 2);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn finalize_computes_NRF_PBC1_PBC2() {
+        let mut flag = BamQcAccum::new();
+        for i in 0..10 {
+            flag.qnames.insert(format!("r{}", i));
+        }
+        flag.total_records = 10;
+        let mut p1 = PbcChromAccum::default();
+        // Manually populate: 4 distinct fingerprints; 2 singletons, 1 doubleton, 1 triple.
+        p1.fingerprints.insert((100, 200, 100, -200), 1); // M1
+        p1.fingerprints.insert((200, 300, 200, -300), 1); // M1
+        p1.fingerprints.insert((300, 400, 300, -400), 2); // M2
+        p1.fingerprints.insert((400, 500, 400, -500), 3); // (no contribution to M1/M2)
+        let r = finalize(&flag, &[p1]);
+        // M1 = 2, M_DISTINCT = 4, M2 = 1, totalQNAMEs = 10.
+        assert!((r.nrf - 0.2).abs() < 1e-12);
+        assert!((r.pbc1 - 0.5).abs() < 1e-12);
+        assert!((r.pbc2 - 2.0).abs() < 1e-12);
     }
 }
