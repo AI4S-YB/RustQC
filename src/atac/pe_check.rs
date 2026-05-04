@@ -53,6 +53,9 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
     }
 
+    // TODO(phase-3): once tests/data/atac/GL1.bam is materialized, add an
+    // `accepts_paired_end_bam` test that asserts assert_paired_end(...) == Ok(()).
+
     #[test]
     fn rejects_single_end_bam() {
         // tests/data/test.bam is the existing RNA QC fixture; all records have
