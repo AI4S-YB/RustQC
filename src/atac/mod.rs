@@ -7,10 +7,19 @@
 use anyhow::{Context, Result};
 
 use crate::cli::AtacArgs;
+use crate::config::AtacConfig;
 
 /// Entry point for the `rustqc atac` subcommand.
+///
+/// Loads the merged YAML config (XDG system → user → env → -c flag), extracts
+/// the `atac:` section, and merges it with CLI flags via [`resolve`].
 pub fn run(args: AtacArgs) -> Result<()> {
-    let cfg = resolve(&args);
+    // Load merged config from all sources (same pattern as run_rna in main.rs).
+    let (full_cfg, _config_sources) =
+        crate::config::load_merged_config(args.config.as_deref())?;
+    let atac_cfg = full_cfg.atac;
+
+    let cfg = resolve(&args, &atac_cfg);
     for input in &cfg.inputs {
         pe_check::assert_paired_end(std::path::Path::new(input))
             .with_context(|| format!("paired-end check failed for {}", input))?;
@@ -40,7 +49,16 @@ pub struct ResolvedAtacConfig {
 
 const DEFAULT_TSSE_FLANK: u32 = 1000;
 
-pub fn resolve(args: &AtacArgs) -> ResolvedAtacConfig {
+/// Merge CLI flags with YAML `AtacConfig`, applying defaults as a last resort.
+///
+/// Precedence (highest → lowest):
+/// - CLI flag present → use CLI value
+/// - YAML field set   → use YAML value
+/// - Neither          → built-in default
+///
+/// For `Option<X>` fields: `args.X.clone().or(atac_cfg.X.clone()).unwrap_or(default)`
+/// For `bool` fields:      `args.X || atac_cfg.X`  (either source enabling → enabled)
+pub fn resolve(args: &AtacArgs, atac_cfg: &AtacConfig) -> ResolvedAtacConfig {
     ResolvedAtacConfig {
         inputs: args.input.clone(),
         gtf: args.gtf.clone(),
@@ -49,10 +67,13 @@ pub fn resolve(args: &AtacArgs) -> ResolvedAtacConfig {
         sample_name: args.sample_name.clone(),
         flat_output: args.flat_output,
         json_summary: args.json_summary.clone(),
-        mito_chrom: args.mito_chrom.clone(),
-        tsse_flank: args.tsse_flank.unwrap_or(DEFAULT_TSSE_FLANK),
-        emit_shifted_bam: args.emit_shifted_bam,
-        emit_split_bams: args.emit_split_bams,
+        mito_chrom: args.mito_chrom.clone().or_else(|| atac_cfg.mito_chrom.clone()),
+        tsse_flank: args
+            .tsse_flank
+            .or(atac_cfg.tsse_flank)
+            .unwrap_or(DEFAULT_TSSE_FLANK),
+        emit_shifted_bam: args.emit_shifted_bam || atac_cfg.emit_shifted_bam,
+        emit_split_bams: args.emit_split_bams || atac_cfg.emit_split_bams,
         threads: args.threads,
         mapq_cut: args.mapq_cut,
         quiet: args.quiet,
@@ -78,7 +99,10 @@ mod tests {
 
     #[test]
     fn resolve_applies_defaults() {
-        let r = resolve(&parse(&["rustqc", "atac", "x.bam", "--gtf", "g.gtf"]));
+        let r = resolve(
+            &parse(&["rustqc", "atac", "x.bam", "--gtf", "g.gtf"]),
+            &AtacConfig::default(),
+        );
         assert_eq!(r.tsse_flank, DEFAULT_TSSE_FLANK);
         assert_eq!(r.threads, 1);
         assert_eq!(r.mapq_cut, 30);
@@ -88,18 +112,66 @@ mod tests {
 
     #[test]
     fn resolve_passes_through_overrides() {
-        let r = resolve(&parse(&[
-            "rustqc",
-            "atac",
-            "x.bam",
-            "--gtf",
-            "g.gtf",
-            "--mito-chrom",
-            "MT",
-            "--tsse-flank",
-            "500",
-        ]));
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--mito-chrom",
+                "MT",
+                "--tsse-flank",
+                "500",
+            ]),
+            &AtacConfig::default(),
+        );
         assert_eq!(r.tsse_flank, 500);
         assert_eq!(r.mito_chrom.as_deref(), Some("MT"));
+    }
+
+    #[test]
+    fn resolve_yaml_config_overrides_default_when_cli_absent() {
+        let atac_cfg = AtacConfig {
+            mito_chrom: Some("XYZ".into()),
+            tsse_flank: Some(2500),
+            emit_shifted_bam: true,
+            emit_split_bams: false,
+        };
+        let r = resolve(
+            &parse(&["rustqc", "atac", "x.bam", "--gtf", "g.gtf"]),
+            &atac_cfg,
+        );
+        assert_eq!(r.mito_chrom.as_deref(), Some("XYZ"));
+        assert_eq!(r.tsse_flank, 2500);
+        assert!(r.emit_shifted_bam);
+    }
+
+    #[test]
+    fn resolve_cli_args_override_yaml() {
+        let atac_cfg = AtacConfig {
+            mito_chrom: Some("XYZ".into()),
+            tsse_flank: Some(2500),
+            emit_shifted_bam: true,
+            emit_split_bams: false,
+        };
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--mito-chrom",
+                "MT",
+                "--tsse-flank",
+                "500",
+            ]),
+            &atac_cfg,
+        );
+        assert_eq!(r.mito_chrom.as_deref(), Some("MT"));
+        assert_eq!(r.tsse_flank, 500);
+        // emit_shifted_bam is true in YAML and CLI doesn't set it, so still true
+        assert!(r.emit_shifted_bam);
     }
 }
