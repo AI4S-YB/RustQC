@@ -1,0 +1,58 @@
+---
+title: ATAC-Seq QC
+description: Single-pass ATAC-seq quality control and Tn5 preprocessing in Rust.
+---
+
+`rustqc atac` is a single-command ATAC-seq QC tool that runs all QC analyses
+in one pass. Designed to slot into the [nf-core/atacseq pipeline][nfc] but works
+anywhere.
+
+[nfc]: https://nf-co.re/atacseq/
+
+## Modules
+
+| Module | Reimplements | Description |
+|--------|--------------|-------------|
+| bamQC | [ATACseqQC][a] `bamQC` | Mapping rates, NRF, PBC1/2, MAPQ histogram |
+| fragSizeDist | [ATACseqQC][a] `fragSizeDist` | Fragment-length distribution + plot |
+| TSSEscore | [ATACseqQC][a] `TSSEscore` | TSS enrichment score (sliding window + loess smoothing) |
+| NFRscore | [ATACseqQC][a] `NFRscore` | Nucleosome-free region score per TSS |
+| PTscore | [ATACseqQC][a] `PTscore` | Promoter / transcript-body score per TSS |
+| estimateLibComplexity | [ATACseqQC][a] `estimateLibComplexity` | Library complexity extrapolation (preseq) |
+| Tn5 shift | [ATACseqQC][a] `shiftGAlignmentsList` | +4/−5 Tn5 shift |
+| Split (fixed) | [ATACseqQC][a] `splitGAlignmentsByCut` (fixed-interval branch) | NFR/mono/di/tri split |
+
+[a]: https://bioconductor.org/packages/ATACseqQC/
+
+## Usage
+
+```bash
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/
+```
+
+ATAC-seq input must be paired-end. Single-end inputs are rejected at startup.
+
+## Outputs
+
+```
+outdir/
+  bamqc/<sample>.bamqc.tsv               # rates, NRF, PBC1/2
+  bamqc/<sample>.mapq.tsv                # MAPQ histogram
+  fragsize/<sample>.fragsize.{tsv,svg}   # fragment-length distribution
+  tsse/<sample>.tsse.{tsv,svg}           # TSS enrichment
+  nfr/<sample>.nfr.tsv                   # NFR score per TSS
+  pt/<sample>.pt.tsv                     # PT score per TSS
+  lib_complexity/<sample>.libcomplexity.{tsv,svg}
+  <sample>.atac.summary.json
+```
+
+## Scope and TODOs
+
+This release covers the core ATAC-seq QC metrics plus Tn5 +4/−5 shift and fixed-interval
+split (NFR < 100, mono 180–247, di 315–473, tri 558–615 bp). The following ATACseqQC
+features are **not yet implemented**:
+
+- Factor footprinting (`factorFootprints`, `footprintsScanner`, `vPlot`,
+  `enrichedFragments`, `distanceDyad`) — depends on BSgenome / PWM motif DBs.
+- Random-forest split branch — only the fixed-interval branch is implemented.
+- Multi-BAM batching — current driver requires exactly one BAM per invocation.
