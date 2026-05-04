@@ -16,9 +16,9 @@ pub struct BamQcAccum {
     pub n_qc_fail: u64,
     pub n_mito: u64,
     pub mapq_hist: HashMap<u8, u64>,
-    /// 5'-fingerprint multiset per chromosome, used for PBC1/PBC2/NRF aggregation.
-    /// Key: (chrom_id, fingerprint_tuple_hash). Stored as a per-chromosome HashMap<key, count>
-    /// outside this struct; here we only own scalars + MAPQ.
+    /// Unique QNAME set; `len()` yields ATACseqQC's `totalQNAMEs` value used as the
+    /// NRF denominator. Grows proportional to distinct reads — see Phase 13 handoff
+    /// notes for the eventual streaming-driver memory tradeoff.
     pub qnames: HashSet<String>,
 }
 
@@ -217,5 +217,18 @@ mod tests {
         assert!((r.nrf - 0.2).abs() < 1e-12);
         assert!((r.pbc1 - 0.5).abs() < 1e-12);
         assert!((r.pbc2 - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn finalize_pbc2_does_not_divide_by_zero_when_m2_is_zero() {
+        // Spec edge case: when no fingerprint occurs exactly twice (M2 == 0),
+        // PBC2 = M1 / max(1, M2) must yield M1 / 1, not panic.
+        let mut flag = BamQcAccum::new();
+        flag.qnames.insert("r1".into());
+        flag.total_records = 1;
+        let mut p = PbcChromAccum::default();
+        p.fingerprints.insert((1, 2, 3, 4), 1); // singleton only — M1=1, M2=0
+        let r = finalize(&flag, &[p]);
+        assert!((r.pbc2 - 1.0).abs() < 1e-12);
     }
 }
