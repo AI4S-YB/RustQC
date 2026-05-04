@@ -32,10 +32,10 @@ pub fn compute(cov: &TssCov) -> TsseResult {
         let vr = mean(center_lo + 2 * TSSE_FLANK - END_SIZE..center_lo + 2 * TSSE_FLANK);
         let blk = (vl + vr) / 2.0;
         if blk <= 0.0 { continue; }
-        for w in 0..n_windows {
+        for (w, sum) in sums.iter_mut().enumerate().take(n_windows) {
             let lo = center_lo + w * WIDTH;
             let v = mean(lo..lo + WIDTH);
-            sums[w] += v / blk;
+            *sum += v / blk;
         }
         surviving += 1;
     }
