@@ -92,6 +92,11 @@ pub mod pt_score;
 pub mod tss_cov;
 pub mod tsse;
 
+/// Return the effective TSS coverage flank, enforcing the PTscore body requirement.
+///
+/// PTscore needs `[TSS - 2000, TSS + 500 + body]` — the promoter + gene-body window
+/// comfortably fits within 3000 bp of each TSS. The user-supplied `tsse_flank` is
+/// raised to 3000 if lower.
 #[allow(dead_code)]
 pub fn resolve_flank(tsse_flank: u32) -> u32 {
     const PT_REQUIREMENT: u32 = 3000;
