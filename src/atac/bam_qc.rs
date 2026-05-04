@@ -165,7 +165,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flag_aggregation_matches_R() {
+    fn flag_aggregation_matches_r() {
         let mut a = BamQcAccum::new();
         // 4 records: 1 mito+dup, 1 proper-pair, 1 qc-fail, 1 unmapped-mate.
         a.update_flags(0x402, 30, true, "r1"); // dup + proper_pair
