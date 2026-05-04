@@ -483,7 +483,12 @@ pub struct ResolvedAtacConfig {
     pub tsse_flank: u32,
     pub emit_shifted_bam: bool,
     pub emit_split_bams: bool,
+    /// Reserved: rayon worker count for the streaming driver (Phase N+1).
+    #[allow(dead_code)]
     pub threads: usize,
+    /// Reserved: MAPQ threshold; informational only today (matches ATACseqQC,
+    /// which does not filter by MAPQ globally). Wired in if/when filtering is added.
+    #[allow(dead_code)]
     pub mapq_cut: u8,
     /// Reserved for future logging verbosity control.
     #[allow(dead_code)]
