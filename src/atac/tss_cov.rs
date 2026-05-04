@@ -3,7 +3,6 @@
 use crate::gtf::{Strand, Tss};
 use std::collections::HashMap;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TssCov {
     pub flank: u32,                            // half-window in bp; arrays have length 2*flank
@@ -12,7 +11,6 @@ pub struct TssCov {
     by_chrom: HashMap<String, Vec<usize>>,     // chrom → indices into tss_list
 }
 
-#[allow(dead_code)]
 impl TssCov {
     pub fn new(tss_list: Vec<Tss>, flank: u32) -> Self {
         let mut by_chrom: HashMap<String, Vec<usize>> = HashMap::new();

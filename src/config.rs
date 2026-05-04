@@ -1231,7 +1231,7 @@ preseq:
         deep_merge(&mut base, overlay);
         let m = base.as_mapping().unwrap();
         let items = m
-            .get(&Value::String("items".into()))
+            .get(Value::String("items".into()))
             .unwrap()
             .as_sequence()
             .unwrap();

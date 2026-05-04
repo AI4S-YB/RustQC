@@ -12,13 +12,11 @@ use std::collections::HashMap;
 /// `readsDupFreq` which keys on chromosome + leftmost alignment position +
 /// insert size.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub struct DupFreqAccum {
     /// (chrom_id, leftmost_pos, isize) → observation count
     pub fingerprints: HashMap<(u32, i64, i64), u64>,
 }
 
-#[allow(dead_code)]
 impl DupFreqAccum {
     /// Record one observation of the PE fragment defined by
     /// `(chrom_id, leftpos, isize)`.
@@ -46,7 +44,6 @@ impl DupFreqAccum {
 
 /// One row of the library complexity curve, corresponding to one sample size.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct LibComplexityRow {
     /// Fraction of observed total reads (e.g. 0.1 = 10 %, 5.0 = 500 %).
     pub relative_size: f64,
@@ -71,7 +68,6 @@ pub struct LibComplexityRow {
 /// # Returns
 /// 14 rows in sample-size order.  `distinct_fragments` may be `NaN` for rows
 /// where bootstrap convergence failed (very small or degenerate histograms).
-#[allow(dead_code)]
 pub fn estimate(hist: &[(u64, u64)], times: u32) -> anyhow::Result<Vec<LibComplexityRow>> {
     // total = Σ j·n_j  (matches R: histFile[,1] %*% histFile[,2])
     let total: u64 = hist.iter().map(|(j, n)| j * n).sum();

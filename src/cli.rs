@@ -452,11 +452,11 @@ pub struct AtacArgs {
     #[arg(long, value_name = "NAME", env = "RUSTQC_MITO_CHROM", help_heading = "ATAC-specific")]
     pub mito_chrom: Option<String>,
 
-    /// Emit +4/-5 Tn5-shifted BAM
+    /// Emit +4/-5 Tn5-shifted BAM (reserved; file writing not yet implemented)
     #[arg(long, default_value_t = false, env = "RUSTQC_EMIT_SHIFTED_BAM", help_heading = "ATAC-specific")]
     pub emit_shifted_bam: bool,
 
-    /// Emit NFR/mono/di/tri BAMs (fixed intervals)
+    /// Emit NFR/mono/di/tri BAMs (fixed intervals) (reserved; file writing not yet implemented)
     #[arg(long, default_value_t = false, env = "RUSTQC_EMIT_SPLIT_BAMS", help_heading = "ATAC-specific")]
     pub emit_split_bams: bool,
 
@@ -469,7 +469,7 @@ pub struct AtacArgs {
     #[arg(short, long, default_value_t = 1, hide_default_value = true, env = "RUSTQC_THREADS", help_heading = "General")]
     pub threads: usize,
 
-    /// MAPQ cutoff [default: 30]
+    /// MAPQ threshold (currently informational only; does not filter records — matches ATACseqQC behavior) [default: 30]
     #[arg(short = 'Q', long = "mapq", default_value_t = 30, hide_default_value = true, env = "RUSTQC_MAPQ", help_heading = "General")]
     pub mapq_cut: u8,
 

@@ -5,7 +5,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct BamQcAccum {
     pub total_records: u64,
@@ -22,7 +21,6 @@ pub struct BamQcAccum {
     pub qnames: HashSet<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct BamQcReport {
     pub total_qnames: u64,
@@ -38,7 +36,6 @@ pub struct BamQcReport {
     pub mapq_hist: Vec<(u8, u64)>, // sorted ascending by mapq
 }
 
-#[allow(dead_code)]
 impl BamQcAccum {
     pub fn new() -> Self {
         Self::default()
@@ -77,7 +74,6 @@ impl BamQcAccum {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct PbcChromAccum {
     /// Fingerprint → count.
@@ -86,7 +82,6 @@ pub struct PbcChromAccum {
     pub fingerprints: HashMap<(i64, i64, i64, i64), u64>,
 }
 
-#[allow(dead_code)]
 impl PbcChromAccum {
     /// Record one PE fragment fingerprint.
     /// `pos1`/`isize1` come from mate 1; `pos2`/`isize2` from mate 2.
@@ -115,7 +110,6 @@ impl PbcChromAccum {
 /// - `PBC1 = ΣM1 / ΣM_DISTINCT`  (0.0 when ΣM_DISTINCT == 0)
 /// - `PBC2 = ΣM1 / max(1, ΣM2)`
 /// - `mapq_hist` sorted ascending by MAPQ value.
-#[allow(dead_code)]
 pub fn finalize(flag_acc: &BamQcAccum, pbc_per_chrom: &[PbcChromAccum]) -> BamQcReport {
     let total = flag_acc.total_records.max(1) as f64; // avoid div0 — total > 0 in real runs
     let (mut sum_distinct, mut sum_m1, mut sum_m2) = (0u64, 0u64, 0u64);

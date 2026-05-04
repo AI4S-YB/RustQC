@@ -3,7 +3,6 @@
 
 /// Fit local degree-2 polynomial weighted by tricube on the q nearest neighbors,
 /// where q = ceil(span * n). Evaluates at every x in `xs`.
-#[allow(dead_code)]
 pub fn loess_smooth(xs: &[f64], ys: &[f64], span: f64, degree: usize) -> Vec<f64> {
     assert_eq!(xs.len(), ys.len());
     let n = xs.len();
@@ -13,7 +12,7 @@ pub fn loess_smooth(xs: &[f64], ys: &[f64], span: f64, degree: usize) -> Vec<f64
     for &x0 in xs {
         // Pick q nearest neighbors by |x - x0|.
         let mut dists: Vec<(usize, f64)> = (0..n).map(|i| (i, (xs[i] - x0).abs())).collect();
-        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         let nbrs: Vec<usize> = dists.iter().take(q).map(|(i, _)| *i).collect();
         let max_d = dists[q - 1].1.max(f64::MIN_POSITIVE);
         // Tricube weights.

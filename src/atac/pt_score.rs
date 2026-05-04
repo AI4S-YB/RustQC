@@ -2,12 +2,9 @@
 
 use crate::atac::tss_cov::TssCov;
 
-#[allow(dead_code)]
 const U: usize = 2000;
-#[allow(dead_code)]
 const D: usize = 500;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PtRow {
     pub tss_idx: usize,
@@ -17,7 +14,6 @@ pub struct PtRow {
     pub log2_mean_cov: f64,
 }
 
-#[allow(dead_code)]
 pub fn compute(cov: &TssCov) -> Vec<PtRow> {
     let flank = cov.flank as usize;
     assert!(flank >= 3000, "PTscore needs flank >= 3000 (got {})", flank);

@@ -1,6 +1,5 @@
 //! Fragment-length histogram (1..1010 bp). Mirrors ATACseqQC R/fragSizeDist.R.
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FragSizeAccum {
     counts: [u64; 1011], // index 0 unused; valid index is 1..=1010
@@ -10,11 +9,9 @@ pub struct FragSizeAccum {
 impl Default for FragSizeAccum { fn default() -> Self { Self { counts: [0; 1011], total: 0 } } }
 
 impl FragSizeAccum {
-    #[allow(dead_code)]
     pub fn new() -> Self { Self::default() }
 
     /// Update from one record's TLEN (signed). Records out of [1,1010] after abs are dropped.
-    #[allow(dead_code)]
     pub fn update(&mut self, tlen: i64) {
         let v = tlen.unsigned_abs();
         if v == 0 || v > 1010 { return; }
@@ -23,7 +20,6 @@ impl FragSizeAccum {
     }
 
     /// Returns the (length, count, density) triples for length=1..=1010.
-    #[allow(dead_code)]
     pub fn finalize(&self) -> Vec<(u32, u64, f64)> {
         let total = self.total.max(1) as f64;
         (1..=1010u32)
@@ -35,7 +31,6 @@ impl FragSizeAccum {
     }
 }
 
-#[allow(dead_code)]
 pub fn write_tsv<W: std::io::Write>(w: &mut W, h: &[(u32, u64, f64)]) -> std::io::Result<()> {
     writeln!(w, "length\tcount\tnorm_density")?;
     for (l, c, d) in h {

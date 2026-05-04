@@ -7,14 +7,12 @@ const TSSE_FLANK: usize = 1000;
 const END_SIZE: usize = 100;
 const WIDTH: usize = 100;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TsseResult {
     pub values: Vec<f64>,    // smoothed, length = 2*TSSE_FLANK / WIDTH = 20
     pub tsse_score: f64,
 }
 
-#[allow(dead_code)]
 pub fn compute(cov: &TssCov) -> TsseResult {
     let flank = cov.flank as usize;
     assert!(flank >= TSSE_FLANK, "TssCov flank must be >=1000 for TSSE (got {})", flank);

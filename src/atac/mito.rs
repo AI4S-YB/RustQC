@@ -1,7 +1,6 @@
 //! Mitochondrial chromosome detection from BAM @SQ names.
 
 /// Names matched by the auto-detect logic (case-sensitive): `chrM`, `MT`, `Mito`.
-#[allow(dead_code)]
 pub fn detect_mito(seq_names: &[String]) -> Option<&str> {
     seq_names
         .iter()

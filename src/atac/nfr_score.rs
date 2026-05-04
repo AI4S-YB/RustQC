@@ -2,12 +2,9 @@
 
 use crate::atac::tss_cov::TssCov;
 
-#[allow(dead_code)]
 const N: usize = 150;
-#[allow(dead_code)]
 const F: usize = 100;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct NfrRow {
     pub tss_idx: usize,
@@ -18,7 +15,6 @@ pub struct NfrRow {
     pub log2_mean_cov: f64,
 }
 
-#[allow(dead_code)]
 pub fn compute(cov: &TssCov) -> Vec<NfrRow> {
     let flank = cov.flank as usize;
     assert!(flank >= 200, "TssCov flank must be >=200 for NFRscore (got {})", flank);
