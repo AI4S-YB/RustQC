@@ -31,17 +31,12 @@ pub fn compute(cov: &TssCov) -> Vec<PtRow> {
         let min_finite = |xs: &[(f64, f64)], pick: fn(&(f64,f64))->f64| -> f64 {
             xs.iter().map(pick).filter(|x| x.is_finite()).fold(f64::INFINITY, f64::min)
         };
-        let m_prom = min_finite(&raw, |t| t.0);
-        let m_body = min_finite(&raw, |t| t.1);
-        // R: max(c(1e-6, min(promoter), min(body)))
-        // Use 1e-6 as protective floor only when any region has zero coverage.
-        // When all minimums are positive, use 0 so the formula is exact.
-        if m_prom > 0.0 && m_body > 0.0 {
-            0.0_f64
-        } else {
-            [1e-6_f64, m_prom, m_body]
-                .iter().cloned().filter(|x| x.is_finite()).fold(1e-6, f64::max)
-        }
+        // R's formula: max(c(1e-6, min(promoter), min(body)))
+        [1e-6, min_finite(&raw, |t| t.0), min_finite(&raw, |t| t.1)]
+            .iter()
+            .cloned()
+            .filter(|x| x.is_finite())
+            .fold(1e-6, f64::max)
     };
     raw.iter().enumerate().map(|(i, &(prom, body))| PtRow {
         tss_idx: i,
@@ -66,7 +61,9 @@ mod tests {
         for b in (3000-2000)..(3000+500) { cov.buffers[0][b] = 4; }
         let rows = compute(&cov);
         let r = &rows[0];
-        // promoter mean ≈ 4, body ≈ 1 → PT ≈ log2(4)-log2(1) = 2.
-        assert!((r.pt_score - 2.0).abs() < 1e-9);
+        // promoter=4, body=1; small = max(1e-6, min(prom)=4, min(body)=1) = 4
+        // PT = log2(4+4)-log2(1+4) = log2(8)-log2(5)
+        let expected = 8.0_f64.log2() - 5.0_f64.log2();
+        assert!((r.pt_score - expected).abs() < 1e-9);
     }
 }

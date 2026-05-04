@@ -37,14 +37,12 @@ pub fn compute(cov: &TssCov) -> Vec<NfrRow> {
         let m_n1 = min_finite(&raw, |t| t.0);
         let m_nf = min_finite(&raw, |t| t.1);
         let m_n2 = min_finite(&raw, |t| t.2);
-        // R: max(c(1e-6, min(nf), min(n1), min(n2)))
-        // Use 1e-6 as protective floor only when any region has zero coverage.
-        // When all minimums are positive, use 0 so the formula is exact.
-        if m_n1 > 0.0 && m_nf > 0.0 && m_n2 > 0.0 {
-            0.0_f64
-        } else {
-            [1e-6_f64, m_n1, m_nf, m_n2].iter().cloned().filter(|x| x.is_finite()).fold(1e-6, f64::max)
-        }
+        // R's formula: max(c(1e-6, min(nf), min(n1), min(n2)))
+        [1e-6, m_n1, m_nf, m_n2]
+            .iter()
+            .cloned()
+            .filter(|x| x.is_finite())
+            .fold(1e-6, f64::max)
     };
     raw.iter().enumerate().map(|(i, &(n1, nf, n2))| {
         let log2_mean_cov = ((3.0 * (n1 + n2) + 2.0 * nf) / 8.0 + small).log2();
@@ -72,7 +70,9 @@ mod tests {
         assert!((r.n1 - 1.0).abs() < 1e-12);
         assert!((r.nf - 1.0).abs() < 1e-12);
         assert!((r.n2 - 1.0).abs() < 1e-12);
-        assert!((r.nfr_score - 0.0).abs() < 1e-9);
+        // small = max(1e-6, 1, 1, 1) = 1; NFR = log2(1+1)+1-log2(1+1+1) = 2-log2(3)
+        let expected = 2.0_f64 - 3.0_f64.log2();
+        assert!((r.nfr_score - expected).abs() < 1e-9);
     }
 
     #[test]
@@ -84,7 +84,9 @@ mod tests {
         for b in 950..1050 { cov.buffers[0][b] = 10; }
         let rows = compute(&cov);
         let r = &rows[0];
-        // n1=n2=1, nf=10; NFR = log2(10) + 1 - log2(2) = log2(10) − 0 = ~3.32.
-        assert!((r.nfr_score - (10.0_f64.log2() + 1.0 - 2.0_f64.log2())).abs() < 1e-9);
+        // n1=n2=1, nf=10; small = max(1e-6, min(n1)=1, min(nf)=10, min(n2)=1) = 10
+        // NFR = log2(10+10)+1-log2(1+1+10) = log2(20)+1-log2(12)
+        let expected = 20.0_f64.log2() + 1.0 - 12.0_f64.log2();
+        assert!((r.nfr_score - expected).abs() < 1e-9);
     }
 }
