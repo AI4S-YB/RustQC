@@ -189,10 +189,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
         if (flags & 0x1) != 0 && (flags & 0x4) == 0 && (flags & 0x8) == 0 {
             let is_first = flags & 0x40 != 0;
             let mate_tid = bam_io::mtid(&record);
-            let mate_pos0 = bam_io::mpos_0based(&record);
-            let _ = mate_pos0; // used only for same-chromosome filter below
-
-            if mate_tid as usize == tid {
+                if mate_tid as usize == tid {
                 // Same-chromosome pairs only.
                 if let Some(prev) = mate_buffer.remove(q) {
                     let (p1, t1, p2, t2) = if is_first {
@@ -357,12 +354,47 @@ pub fn run(args: AtacArgs) -> Result<()> {
     }
 
     // ── Build and write JSON summary ──────────────────────────────────────────
+    // Derive relative TSV paths (relative to outdir).
+    let fragsize_tsv_path = if flat {
+        format!("{}.fragsize.tsv", sample)
+    } else {
+        format!("fragsize/{}.fragsize.tsv", sample)
+    };
+    let tsse_tsv_path = if flat {
+        format!("{}.tsse.tsv", sample)
+    } else {
+        format!("tsse/{}.tsse.tsv", sample)
+    };
+    let nfr_tsv_path = if flat {
+        format!("{}.nfr.tsv", sample)
+    } else {
+        format!("nfr/{}.nfr.tsv", sample)
+    };
+    let pt_tsv_path = if flat {
+        format!("{}.pt.tsv", sample)
+    } else {
+        format!("pt/{}.pt.tsv", sample)
+    };
+    let libcomplexity_tsv_path = if flat {
+        format!("{}.libcomplexity.tsv", sample)
+    } else {
+        format!("lib_complexity/{}.libcomplexity.tsv", sample)
+    };
+
+    // extrapolated_total: row where relative_size == 1.0; None when NaN.
+    let extrapolated_total: Option<f64> = lib_rows
+        .iter()
+        .find(|r| (r.relative_size - 1.0).abs() < 1e-9)
+        .and_then(|r| if r.distinct_fragments.is_nan() { None } else { Some(r.distinct_fragments) });
+
     let atac_summary = summary::AtacSummary {
         schema_version: "1.0".to_string(),
         sample: sample.clone(),
         tool_versions: summary::ToolVersions {
             rustqc: env!("CARGO_PKG_VERSION").to_string(),
+            atacseqqc_replicates: "1.36.0".to_string(),
         },
+        split_method: "fixed_intervals_v1",
         bamqc: {
             let mut mapq_histogram = serde_json::Map::new();
             for (k, v) in &bq_report.mapq_hist {
@@ -373,6 +405,9 @@ pub fn run(args: AtacArgs) -> Result<()> {
                 duplicate_rate: bq_report.duplicate_rate,
                 mitochondria_rate: bq_report.mitochondria_rate,
                 proper_pair_rate: bq_report.proper_pair_rate,
+                unmapped_rate: bq_report.unmapped_rate,
+                has_unmapped_mate_rate: bq_report.has_unmapped_mate_rate,
+                not_passing_qc_rate: bq_report.not_passing_qc_rate,
                 nrf: bq_report.nrf,
                 pbc1: bq_report.pbc1,
                 pbc2: bq_report.pbc2,
@@ -381,26 +416,28 @@ pub fn run(args: AtacArgs) -> Result<()> {
         },
         fragsize: summary::FragsizeSection {
             total_pairs: frag_rows.iter().map(|(_, c, _)| c).sum(),
+            tsv_path: fragsize_tsv_path,
         },
         tsse: summary::TsseSection {
             score: tsse_result.tsse_score,
             n_windows: tsse_result.values.len() as u32,
+            values: tsse_result.values.clone(),
+            tsv_path: tsse_tsv_path,
         },
         nfr: summary::ScoreSection {
             n_tss: nfr_rows.len() as u32,
             median_score: nfr_median,
+            tsv_path: nfr_tsv_path,
         },
         pt: summary::ScoreSection {
             n_tss: pt_rows.len() as u32,
             median_score: pt_median,
+            tsv_path: pt_tsv_path,
         },
         lib_complexity: summary::LibComplexitySection {
             n_rows: lib_rows.len() as u32,
-            distinct_at_1x: lib_rows
-                .iter()
-                .find(|r| (r.relative_size - 1.0).abs() < 1e-9)
-                .map(|r| r.distinct_fragments)
-                .unwrap_or(f64::NAN),
+            extrapolated_total,
+            tsv_path: libcomplexity_tsv_path,
         },
     };
 
@@ -432,10 +469,11 @@ pub fn run(args: AtacArgs) -> Result<()> {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ResolvedAtacConfig {
     pub inputs: Vec<String>,
     pub gtf: String,
+    /// Reserved for CRAM decoding (Phase N+1).
+    #[allow(dead_code)]
     pub reference: Option<String>,
     pub outdir: String,
     pub sample_name: Option<String>,
@@ -447,7 +485,11 @@ pub struct ResolvedAtacConfig {
     pub emit_split_bams: bool,
     pub threads: usize,
     pub mapq_cut: u8,
+    /// Reserved for future logging verbosity control.
+    #[allow(dead_code)]
     pub quiet: bool,
+    /// Reserved for future logging verbosity control.
+    #[allow(dead_code)]
     pub verbose: bool,
 }
 
@@ -506,7 +548,6 @@ pub mod tsse;
 /// PTscore needs `[TSS - 2000, TSS + 500 + body]` — the promoter + gene-body window
 /// comfortably fits within 3000 bp of each TSS. The user-supplied `tsse_flank` is
 /// raised to 3000 if lower.
-#[allow(dead_code)]
 pub fn resolve_flank(tsse_flank: u32) -> u32 {
     const PT_REQUIREMENT: u32 = 3000;
     tsse_flank.max(PT_REQUIREMENT)
