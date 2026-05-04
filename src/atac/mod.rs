@@ -85,7 +85,9 @@ pub mod bam_qc;
 pub mod frag_size;
 pub mod lib_complexity;
 pub mod mito;
+pub mod nfr_score;
 pub mod pe_check;
+pub mod pt_score;
 pub mod tss_cov;
 
 #[cfg(test)]
