@@ -1,5 +1,29 @@
 # RustQC Changelog
 
+## [Unreleased]
+
+### Added
+
+- `rustqc atac` subcommand for single-pass ATAC-seq QC, replicating
+  ATACseqQC 1.36.0's `bamQC`, `fragSizeDist`, `TSSEscore`, `NFRscore`,
+  `PTscore`, and `estimateLibComplexity`. Numerical fidelity targets the
+  upstream R package (byte-identical / 1e-6 / 1e-3 per metric — see the
+  documentation site).
+- Tn5 +4/−5 shift and fixed-interval (NFR / mono / di / tri) length split
+  helpers — opt-in via `--emit-shifted-bam` / `--emit-split-bams` (file
+  writing reserved for a follow-up release).
+- Shared BAM/preseq infrastructure lifted out of `src/rna/` to crate root
+  (`src/bam_flags.rs`, `src/bam_io.rs`, `src/cpp_rng.rs`, `src/preseq.rs`).
+  No behavior change to existing `rustqc rna` outputs.
+
+### TODO
+
+- Factor-footprinting metrics (`factorFootprints`, `vPlot`, etc.) —
+  requires BSgenome / PWM motif DBs.
+- Random-forest split branch (only the fixed-interval split lands here).
+- `EmitWriters::open` actual file writing for `--emit-shifted-bam` /
+  `--emit-split-bams`.
+
 ## [Version 0.3.0](https://github.com/AI4S-YB/RustQC/releases/tag/v0.3.0) - 2026-04-22
 
 First release of the AI4S-YB fork. Focus: Windows support and a pure-Rust
