@@ -82,6 +82,7 @@ pub fn resolve(args: &AtacArgs, atac_cfg: &AtacConfig) -> ResolvedAtacConfig {
 }
 
 pub mod bam_qc;
+pub mod frag_size;
 pub mod mito;
 pub mod pe_check;
 
