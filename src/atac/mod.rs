@@ -82,6 +82,7 @@ pub fn resolve(args: &AtacArgs, atac_cfg: &AtacConfig) -> ResolvedAtacConfig {
 }
 
 pub mod bam_qc;
+pub mod bam_writer;
 pub mod frag_size;
 pub mod lib_complexity;
 pub mod loess;
