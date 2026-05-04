@@ -9,6 +9,7 @@
 //! (flagstat, idxstats, stats), and Qualimap gene body coverage profiling.
 //! Individual tools can be disabled via the YAML config file.
 
+mod atac;
 mod bam_flags;
 mod bam_io;
 mod citations;
@@ -81,6 +82,8 @@ fn main() -> Result<()> {
     let verbosity = match &cli.command {
         cli::Commands::Rna(args) if args.quiet => Verbosity::Quiet,
         cli::Commands::Rna(args) if args.verbose => Verbosity::Verbose,
+        cli::Commands::Atac(args) if args.quiet => Verbosity::Quiet,
+        cli::Commands::Atac(args) if args.verbose => Verbosity::Verbose,
         _ => Verbosity::Normal,
     };
 
@@ -98,8 +101,11 @@ fn main() -> Result<()> {
     let ui = Ui::new(verbosity);
 
     match cli.command {
-        cli::Commands::Rna(args) => run_rna(args, &ui),
+        cli::Commands::Rna(args) => run_rna(args, &ui)?,
+        cli::Commands::Atac(args) => atac::run(args)?,
     }
+
+    Ok(())
 }
 
 /// Reconstruct the command line for the featureCounts-compatible header comment.
