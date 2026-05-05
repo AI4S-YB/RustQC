@@ -168,9 +168,18 @@ pub fn run(args: AtacArgs) -> Result<()> {
             frag.update(tlen);
         }
 
-        // 5'-end position for TssCov.
+        // 5'-end position for TssCov, with Tn5 +4/-5 shift applied.
+        //
+        // Match ATACseqQC's `shiftGAlignmentsList` filter set, which feeds the
+        // shifted reads into NFRscore/PTscore/TSSEscore:
+        //   - paired-end (flag 0x1)
+        //   - this mate mapped (flag 0x4 unset)
+        //   - mate also mapped (flag 0x8 unset; drops singletons)
+        let is_pe_both_mapped = (flags & 0x1) != 0
+            && (flags & 0x4) == 0
+            && (flags & 0x8) == 0;
         let pos0 = bam_io::pos_0based(&record);
-        if pos0 >= 0 && (flags & 0x4) == 0 {
+        if pos0 >= 0 && is_pe_both_mapped {
             let is_reverse = flags & 0x10 != 0;
             let pos5p = if is_reverse {
                 let endp = bam_io::end_pos_0based(&record);
@@ -182,7 +191,14 @@ pub fn run(args: AtacArgs) -> Result<()> {
             } else {
                 (pos0 + 1) as u64
             };
-            tss_cov.add_5prime(chrom_name, pos5p);
+            let pos5p_shifted = if is_reverse {
+                pos5p.checked_sub(5)
+            } else {
+                Some(pos5p + 4)
+            };
+            if let Some(p) = pos5p_shifted {
+                tss_cov.add_5prime(chrom_name, p);
+            }
         }
 
         // PBC fingerprint: only for proper pairs where both mates are mapped and on same chrom.
@@ -255,9 +271,11 @@ pub fn run(args: AtacArgs) -> Result<()> {
         let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "sample\ttotal_qnames\tduplicate_rate\tmitochondria_rate\tproper_pair_rate\tunmapped_rate\thas_unmapped_mate_rate\tnot_passing_qc_rate\tnrf\tpbc1\tpbc2")?;
+        // {:.17e} preserves full f64 precision so downstream tools can re-parse
+        // the rate fields without rounding loss against the R reference.
         writeln!(
             w,
-            "{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+            "{}\t{}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}\t{:.17e}",
             sample,
             bq_report.total_qnames,
             bq_report.duplicate_rate,
