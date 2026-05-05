@@ -66,11 +66,32 @@ suppressPackageStartupMessages({
   library(GenomicAlignments)
   library(jsonlite)
   library(rtracklayer)
+  if (requireNamespace("txdbmaker", quietly = TRUE)) library(txdbmaker)
 })
 
+# Bioconductor moved makeTxDbFromGFF from GenomicFeatures to txdbmaker.
+# Use the txdbmaker version when available, otherwise fall back to the
+# GenomicFeatures version (older Bioc releases).
+make_txdb_from_gff <- function(path) {
+  # txdbmaker uses lowercase "gtf"; GenomicFeatures historically accepted "GTF"
+  if (requireNamespace("txdbmaker", quietly = TRUE)) {
+    txdbmaker::makeTxDbFromGFF(path, format = "gtf")
+  } else {
+    GenomicFeatures::makeTxDbFromGFF(path, format = "GTF")
+  }
+}
+
 # ---- Paths ------------------------------------------------------------------
-script_dir  <- dirname(normalizePath(if (interactive()) "." else commandArgs(trailingOnly = FALSE)[4]))
-repo_root   <- file.path(script_dir, "..", "..", "..")
+file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+script_path <- if (length(file_arg) > 0) {
+  sub("^--file=", "", file_arg[1])
+} else if (!is.null(sys.frame(1)$ofile)) {
+  sys.frame(1)$ofile
+} else {
+  "."
+}
+script_dir <- dirname(normalizePath(script_path, mustWork = FALSE))
+repo_root  <- normalizePath(file.path(script_dir, "..", "..", ".."), mustWork = FALSE)
 data_dir    <- file.path(repo_root, "tests", "data", "atac")
 golden_dir  <- file.path(repo_root, "tests", "atac", "golden")
 gtf_path    <- file.path(data_dir, "GL_tss.gtf")
@@ -85,9 +106,14 @@ stopifnot(
 
 # ---- Load TSS from synthetic GTF -------------------------------------------
 message("Loading TSS from GL_tss.gtf ...")
-txdb_local <- makeTxDbFromGFF(gtf_path, format = "GTF")
-txs        <- transcripts(txdb_local)
+txdb_local <- make_txdb_from_gff(gtf_path)
+HG19_CHR1_LEN <- 249250621L
+txs <- transcripts(txdb_local)
 seqlevels(txs, pruning.mode = "coarse") <- "chr1"
+suppressWarnings(seqlengths(txs) <- c(chr1 = HG19_CHR1_LEN))
+# GRanges spanning chr1 — used for the `which=` arg of readBamFile.
+chr1_full <- GRanges(seqnames = "chr1",
+                     ranges   = IRanges(1, HG19_CHR1_LEN))
 message("  Loaded ", length(txs), " transcripts on chr1")
 
 # ---- Helper: write JSON golden for bamQC ------------------------------------
@@ -97,14 +123,19 @@ write_bamqc_golden <- function(sample, bam_path) {
   # ATACseqQC bamQC returns a list; key fields:
   #   duplicateRate, mitochondriaRate, properPairRate, NRF, PBC1, PBC2,
   #   totalQnameSorted
+  # ATACseqQC 1.34+ uses these field names (older versions had `totalQnameSorted`,
+  # `NRF`, `PBC1`, `PBC2` — keep both via %||% fall-through for portability).
   out <- list(
-    total_qnames      = as.integer(qc$totalQnameSorted %||% NA),
-    duplicate_rate    = as.numeric(qc$duplicateRate    %||% NA),
-    mitochondria_rate = as.numeric(qc$mitochondriaRate  %||% NA),
-    proper_pair_rate  = as.numeric(qc$properPairRate    %||% NA),
-    nrf               = as.numeric(qc$NRF               %||% NA),
-    pbc1              = as.numeric(qc$PBC1              %||% NA),
-    pbc2              = as.numeric(qc$PBC2              %||% NA)
+    total_qnames        = as.integer(qc$totalQNAMEs                  %||% qc$totalQnameSorted %||% NA),
+    duplicate_rate      = as.numeric(qc$duplicateRate                %||% NA),
+    mitochondria_rate   = as.numeric(qc$mitochondriaRate             %||% NA),
+    proper_pair_rate    = as.numeric(qc$properPairRate               %||% NA),
+    unmapped_rate       = as.numeric(qc$unmappedRate                 %||% NA),
+    has_unmapped_mate_rate = as.numeric(qc$hasUnmappedMateRate       %||% NA),
+    not_passing_qc_rate    = as.numeric(qc$notPassingQualityControlsRate %||% NA),
+    nrf                 = as.numeric(qc$nonRedundantFraction         %||% qc$NRF  %||% NA),
+    pbc1                = as.numeric(qc$PCRbottleneckCoefficient_1   %||% qc$PBC1 %||% NA),
+    pbc2                = as.numeric(qc$PCRbottleneckCoefficient_2   %||% qc$PBC2 %||% NA)
   )
   out_path <- file.path(golden_dir, paste0(sample, ".bamqc.golden.json"))
   write_json(out, out_path, auto_unbox = TRUE, digits = 15)
@@ -115,11 +146,19 @@ write_bamqc_golden <- function(sample, bam_path) {
 write_fragsize_golden <- function(sample, bam_path) {
   message("fragSizeDist for ", sample, " ...")
   # fragSizeDist returns a named integer vector of counts per fragment size
+  # ATACseqQC 1.34+ removed maxFragmentLength arg; pass only required args.
+  # Return shape changed: now a named list whose element is a `table` keyed
+  # by fragment size strings.
   fsd <- fragSizeDist(bam_path, bamFiles.labels = sample,
-                      maxFragmentLength = 2000, index = paste0(bam_path, ".bai"))
-  # fsd is a matrix with one column per sample; rows = fragment sizes
-  sizes  <- as.integer(rownames(fsd))
-  counts <- as.integer(fsd[, 1])
+                      index = paste0(bam_path, ".bai"))
+  tab <- if (is.list(fsd)) fsd[[1]] else fsd[, 1]
+  sizes  <- as.integer(if (!is.null(names(tab))) names(tab) else rownames(tab))
+  counts <- as.integer(tab)
+  # Mirror rustqc's [1, 2000] cap (matches ATACseqQC's older `maxFragmentLength`
+  # default; longer TLENs are mostly chimeric noise).
+  keep <- sizes >= 1 & sizes <= 2000
+  sizes  <- sizes[keep]
+  counts <- counts[keep]
   out_path <- file.path(golden_dir, paste0(sample, ".fragsize.golden.tsv"))
   write.table(
     data.frame(frag_size = sizes, count = counts),
@@ -132,7 +171,7 @@ write_fragsize_golden <- function(sample, bam_path) {
 load_shifted <- function(sample, bam_path) {
   message("Loading + shifting reads for ", sample, " ...")
   tags <- c("AS", "XN", "XM", "XO", "XG", "NM", "MD", "YS", "YZ")
-  gal <- readBamFile(bam_path, tag = tags, which = as(seqinfo(txdb_local)["chr1"], "GRanges"),
+  gal <- readBamFile(bam_path, tag = tags, which = chr1_full,
                      asMates = TRUE, bigFile = TRUE)
   tmp_shifted <- tempfile(fileext = ".bam")
   gal1 <- shiftGAlignmentsList(gal, outbam = tmp_shifted)
@@ -143,9 +182,16 @@ load_shifted <- function(sample, bam_path) {
 write_nfr_golden <- function(sample, gal1) {
   message("NFRscore for ", sample, " ...")
   nfr <- NFRscore(gal1, txs)
+  # ATACseqQC sorts the result by NFR_score descending; for byte-stable
+  # comparison against rustqc (which emits TSS in GTF input order), we
+  # re-sort by tx_name ascending so row N matches rustqc's tss_idx N.
+  nfr_df <- as.data.frame(nfr)
+  if ("tx_name" %in% colnames(nfr_df)) {
+    nfr_df <- nfr_df[order(as.character(nfr_df$tx_name)), , drop = FALSE]
+  }
   out_path <- file.path(golden_dir, paste0(sample, ".nfr.golden.tsv"))
   write.table(
-    as.data.frame(nfr),
+    nfr_df,
     file = out_path, sep = "\t", quote = FALSE, row.names = TRUE
   )
   message("  Written: ", out_path)
@@ -155,9 +201,13 @@ write_nfr_golden <- function(sample, gal1) {
 write_pt_golden <- function(sample, gal1) {
   message("PTscore for ", sample, " ...")
   pt <- PTscore(gal1, txs)
+  pt_df <- as.data.frame(pt)
+  if ("tx_name" %in% colnames(pt_df)) {
+    pt_df <- pt_df[order(as.character(pt_df$tx_name)), , drop = FALSE]
+  }
   out_path <- file.path(golden_dir, paste0(sample, ".pt.golden.tsv"))
   write.table(
-    as.data.frame(pt),
+    pt_df,
     file = out_path, sep = "\t", quote = FALSE, row.names = TRUE
   )
   message("  Written: ", out_path)
