@@ -1855,11 +1855,7 @@ fn write_rseqc_outputs(
             &params.config.preseq,
         ) {
             Ok(result) => {
-                preseq::write_output(
-                    &result,
-                    &output_path,
-                    params.config.preseq.confidence_level,
-                )?;
+                preseq::write_output(&result, &output_path, params.config.preseq.confidence_level)?;
                 let p = output_path.display().to_string();
                 ui.output_item("preseq", &p);
                 ui.output_detail(&format!("{} extrapolation points", result.curve.len(),));

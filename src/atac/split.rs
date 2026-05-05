@@ -2,15 +2,27 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
-pub enum FragBucket { Nfr, Mono, Di, Tri, Other }
+pub enum FragBucket {
+    Nfr,
+    Mono,
+    Di,
+    Tri,
+    Other,
+}
 
 #[allow(dead_code)]
 pub fn classify(abs_tlen: u32) -> FragBucket {
-    if abs_tlen < 100                            { FragBucket::Nfr }
-    else if (180..=247).contains(&abs_tlen)      { FragBucket::Mono }
-    else if (315..=473).contains(&abs_tlen)      { FragBucket::Di }
-    else if (558..=615).contains(&abs_tlen)      { FragBucket::Tri }
-    else                                          { FragBucket::Other }
+    if abs_tlen < 100 {
+        FragBucket::Nfr
+    } else if (180..=247).contains(&abs_tlen) {
+        FragBucket::Mono
+    } else if (315..=473).contains(&abs_tlen) {
+        FragBucket::Di
+    } else if (558..=615).contains(&abs_tlen) {
+        FragBucket::Tri
+    } else {
+        FragBucket::Other
+    }
 }
 
 #[cfg(test)]

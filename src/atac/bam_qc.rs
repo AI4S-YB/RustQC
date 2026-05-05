@@ -87,7 +87,10 @@ impl PbcChromAccum {
     /// `pos1`/`isize1` come from mate 1; `pos2`/`isize2` from mate 2.
     /// For singletons, pass sentinel values (e.g. i64::MIN) for the missing mate.
     pub fn add_pe(&mut self, pos1: i64, isize1: i64, pos2: i64, isize2: i64) {
-        *self.fingerprints.entry((pos1, isize1, pos2, isize2)).or_default() += 1;
+        *self
+            .fingerprints
+            .entry((pos1, isize1, pos2, isize2))
+            .or_default() += 1;
     }
 
     /// Returns `(M_DISTINCT, M1, M2)` — used in the aggregate to compute NRF/PBC1/PBC2.
@@ -132,11 +135,7 @@ pub fn finalize(flag_acc: &BamQcAccum, pbc_per_chrom: &[PbcChromAccum]) -> BamQc
     };
     let pbc2 = sum_m1 as f64 / sum_m2.max(1) as f64;
 
-    let mut mapq_hist: Vec<(u8, u64)> = flag_acc
-        .mapq_hist
-        .iter()
-        .map(|(k, v)| (*k, *v))
-        .collect();
+    let mut mapq_hist: Vec<(u8, u64)> = flag_acc.mapq_hist.iter().map(|(k, v)| (*k, *v)).collect();
     mapq_hist.sort_by_key(|(k, _)| *k);
 
     BamQcReport {

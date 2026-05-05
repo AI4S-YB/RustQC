@@ -139,7 +139,10 @@ pub fn rewrite_record_inplace(
             let new_pos_1based = usize::from(start) + ref_shift as usize;
             // Position is 1-based; usize::from(Position) yields the 1-based value.
             let new_pos = Position::new(new_pos_1based).ok_or_else(|| {
-                anyhow::anyhow!("alignment start overflow after Tn5 shift: {}", new_pos_1based)
+                anyhow::anyhow!(
+                    "alignment start overflow after Tn5 shift: {}",
+                    new_pos_1based
+                )
             })?;
             *rec.alignment_start_mut() = Some(new_pos);
         }
@@ -205,10 +208,10 @@ use std::path::Path;
 #[derive(Default)]
 pub struct EmitWriters {
     pub shifted: Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
-    pub nfr:     Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
-    pub mono:    Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
-    pub di:      Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
-    pub tri:     Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
+    pub nfr: Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
+    pub mono: Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
+    pub di: Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
+    pub tri: Option<noodles_bam::io::Writer<std::io::BufWriter<std::fs::File>>>,
 }
 
 impl EmitWriters {
@@ -287,8 +290,8 @@ mod tests {
     #[test]
     fn rewrite_drops_small_tlen() {
         use noodles_sam::alignment::{
-            RecordBuf,
             record::cigar::{op::Kind, Op},
+            RecordBuf,
         };
         let cigar: noodles_sam::alignment::record_buf::Cigar =
             [Op::new(Kind::Match, 50)].into_iter().collect();

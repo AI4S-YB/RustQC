@@ -9,9 +9,9 @@
 //!
 //! This implements a simplified featureCounts-compatible counting strategy.
 
+use crate::bam_io::{self as bam, CigarKind};
 use crate::cli::Strandedness;
 use crate::gtf::Gene;
-use crate::bam_io::{self as bam, CigarKind};
 use crate::rna::qualimap::QualimapAccum;
 use crate::rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 use crate::ui::format_count;

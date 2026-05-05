@@ -39,10 +39,7 @@ fn run_atac_on(sample: &str) -> tempfile::TempDir {
         env!("CARGO_MANIFEST_DIR"),
         sample
     );
-    let gtf = format!(
-        "{}/tests/data/atac/GL_tss.gtf",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let gtf = format!("{}/tests/data/atac/GL_tss.gtf", env!("CARGO_MANIFEST_DIR"));
     let status = Command::new(env!("CARGO_BIN_EXE_rustqc"))
         .args([
             "atac",
@@ -130,7 +127,11 @@ fn rustqc_atac_runs_on_gl1_fixture() {
         ])
         .status()
         .unwrap();
-    assert!(status.success(), "rustqc atac exited non-zero: {:?}", status);
+    assert!(
+        status.success(),
+        "rustqc atac exited non-zero: {:?}",
+        status
+    );
 
     // Smoke check: every expected metric file exists.
     for sub in [
@@ -156,8 +157,8 @@ fn rustqc_atac_runs_on_gl1_fixture() {
     // Verify JSON summary is valid JSON with expected top-level keys.
     let json_path = outdir.path().join("GL1.atac.summary.json");
     let json_str = std::fs::read_to_string(&json_path).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("GL1.atac.summary.json is not valid JSON");
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).expect("GL1.atac.summary.json is not valid JSON");
     let obj = v.as_object().expect("JSON root is not an object");
     for key in &[
         "schema_version",
@@ -184,9 +185,9 @@ fn rustqc_atac_runs_on_gl1_fixture() {
 fn smoke_bamqc(v: &serde_json::Value, sample: &str) {
     let bq = &v["bamqc"];
     for field in &["nrf", "pbc1", "pbc2", "duplicate_rate", "proper_pair_rate"] {
-        let val = bq[field].as_f64().unwrap_or_else(|| {
-            panic!("{} bamqc.{} missing or not a number", sample, field)
-        });
+        let val = bq[field]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{} bamqc.{} missing or not a number", sample, field));
         assert!(
             val.is_finite() || field == &"pbc2",
             "{} bamqc.{} is not finite: {}",
@@ -202,9 +203,9 @@ fn smoke_bamqc(v: &serde_json::Value, sample: &str) {
 
 /// Verify tsse summary score is present and finite.
 fn smoke_tsse(v: &serde_json::Value, sample: &str) {
-    let score = v["tsse"]["score"].as_f64().unwrap_or_else(|| {
-        panic!("{} tsse.score missing or not a number", sample)
-    });
+    let score = v["tsse"]["score"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("{} tsse.score missing or not a number", sample));
     // For GL1 with proper GTF, TSSE should be > 0; for others just check finite
     assert!(
         score.is_finite(),
@@ -222,7 +223,12 @@ fn smoke_nfr(v: &serde_json::Value, sample: &str) {
     let ms = v["nfr"]["median_score"]
         .as_f64()
         .unwrap_or_else(|| panic!("{} nfr.median_score missing", sample));
-    assert!(ms.is_finite(), "{} nfr.median_score not finite: {}", sample, ms);
+    assert!(
+        ms.is_finite(),
+        "{} nfr.median_score not finite: {}",
+        sample,
+        ms
+    );
 }
 
 /// Verify pt summary is present and well-formed.
@@ -261,24 +267,20 @@ fn gl1_bamqc_within_tolerance() {
     let golden_str = std::fs::read_to_string(&gpath).expect("read golden JSON");
     let golden: serde_json::Value = serde_json::from_str(&golden_str).expect("parse golden JSON");
 
-    let rust_str = std::fs::read_to_string(
-        outdir.path().join("bamqc/GL1.bamqc.tsv"),
-    )
-    .expect("read bamqc TSV");
-    let rows: Vec<Vec<&str>> = rust_str
-        .lines()
-        .map(|l| l.split('\t').collect())
-        .collect();
+    let rust_str =
+        std::fs::read_to_string(outdir.path().join("bamqc/GL1.bamqc.tsv")).expect("read bamqc TSV");
+    let rows: Vec<Vec<&str>> = rust_str.lines().map(|l| l.split('\t').collect()).collect();
     assert_eq!(rows.len(), 2, "expected header + 1 data row in bamqc TSV");
     let header = &rows[0];
     let data = &rows[1];
     let col = |name: &str| -> f64 {
-        let idx = header.iter().position(|&h| h == name).unwrap_or_else(|| {
-            panic!("column '{}' not found in bamqc TSV header", name)
-        });
-        data[idx].parse::<f64>().unwrap_or_else(|_| {
-            panic!("column '{}' value '{}' is not a float", name, data[idx])
-        })
+        let idx = header
+            .iter()
+            .position(|&h| h == name)
+            .unwrap_or_else(|| panic!("column '{}' not found in bamqc TSV header", name));
+        data[idx]
+            .parse::<f64>()
+            .unwrap_or_else(|_| panic!("column '{}' value '{}' is not a float", name, data[idx]))
     };
 
     const TOL: f64 = 1e-12;
@@ -298,7 +300,9 @@ fn gl1_bamqc_within_tolerance() {
     }
     // total_qnames: integer exact match
     let rust_n = col("total_qnames") as u64;
-    let golden_n = golden["total_qnames"].as_u64().expect("golden total_qnames");
+    let golden_n = golden["total_qnames"]
+        .as_u64()
+        .expect("golden total_qnames");
     assert_eq!(rust_n, golden_n, "GL1 bamqc.total_qnames mismatch");
 }
 
@@ -326,7 +330,9 @@ fn gl1_fragsize_within_tolerance() {
         .iter()
         .skip(1) // skip header
         .filter_map(|row| {
-            if row.len() < 2 { return None; }
+            if row.len() < 2 {
+                return None;
+            }
             let len: u32 = row[0].parse().ok()?;
             let cnt: u64 = row[1].parse().ok()?;
             Some((len, cnt))
@@ -334,13 +340,14 @@ fn gl1_fragsize_within_tolerance() {
         .collect();
 
     for golden_row in golden_rows.iter().skip(1) {
-        if golden_row.len() < 2 { continue; }
+        if golden_row.len() < 2 {
+            continue;
+        }
         let size: u32 = golden_row[0].parse().expect("golden frag_size parse");
         let golden_count: u64 = golden_row[1].parse().expect("golden count parse");
         let rust_count = rust_map.get(&size).copied().unwrap_or(0);
         assert_eq!(
-            rust_count,
-            golden_count,
+            rust_count, golden_count,
             "GL1 fragsize: count mismatch at length {}",
             size
         );
@@ -358,9 +365,7 @@ fn gl1_nfr_within_tolerance() {
 
     const TOL: f64 = 1e-6;
     let golden_rows = parse_tsv(&golden_path("GL1", "nfr", "tsv"));
-    let rust_rows = parse_tsv(
-        outdir.path().join("nfr/GL1.nfr.tsv").to_str().unwrap(),
-    );
+    let rust_rows = parse_tsv(outdir.path().join("nfr/GL1.nfr.tsv").to_str().unwrap());
 
     // Both should have same number of data rows
     assert_eq!(
@@ -378,8 +383,15 @@ fn gl1_nfr_within_tolerance() {
         .position(|h| h == "nfr_score")
         .expect("nfr_score column");
 
-    for (i, (rust_row, golden_row)) in rust_rows.iter().skip(1).zip(golden_rows.iter().skip(1)).enumerate() {
-        if rust_row.len() <= nfr_col || golden_row.len() < 2 { continue; }
+    for (i, (rust_row, golden_row)) in rust_rows
+        .iter()
+        .skip(1)
+        .zip(golden_rows.iter().skip(1))
+        .enumerate()
+    {
+        if rust_row.len() <= nfr_col || golden_row.len() < 2 {
+            continue;
+        }
         let rust_val: f64 = rust_row[nfr_col].parse().unwrap_or(f64::NAN);
         // Golden TSV from R may have a different column order; try last column
         let golden_val: f64 = golden_row
@@ -387,7 +399,9 @@ fn gl1_nfr_within_tolerance() {
             .rev()
             .find_map(|v| v.parse::<f64>().ok())
             .unwrap_or(f64::NAN);
-        if rust_val.is_nan() && golden_val.is_nan() { continue; }
+        if rust_val.is_nan() && golden_val.is_nan() {
+            continue;
+        }
         assert_close(rust_val, golden_val, TOL, &format!("GL1 nfr row {}", i));
     }
 }
@@ -403,9 +417,7 @@ fn gl1_pt_within_tolerance() {
 
     const TOL: f64 = 1e-6;
     let golden_rows = parse_tsv(&golden_path("GL1", "pt", "tsv"));
-    let rust_rows = parse_tsv(
-        outdir.path().join("pt/GL1.pt.tsv").to_str().unwrap(),
-    );
+    let rust_rows = parse_tsv(outdir.path().join("pt/GL1.pt.tsv").to_str().unwrap());
 
     assert_eq!(
         rust_rows.len(),
@@ -419,15 +431,24 @@ fn gl1_pt_within_tolerance() {
         .position(|h| h == "pt_score")
         .expect("pt_score column");
 
-    for (i, (rust_row, golden_row)) in rust_rows.iter().skip(1).zip(golden_rows.iter().skip(1)).enumerate() {
-        if rust_row.len() <= pt_col || golden_row.len() < 2 { continue; }
+    for (i, (rust_row, golden_row)) in rust_rows
+        .iter()
+        .skip(1)
+        .zip(golden_rows.iter().skip(1))
+        .enumerate()
+    {
+        if rust_row.len() <= pt_col || golden_row.len() < 2 {
+            continue;
+        }
         let rust_val: f64 = rust_row[pt_col].parse().unwrap_or(f64::NAN);
         let golden_val: f64 = golden_row
             .iter()
             .rev()
             .find_map(|v| v.parse::<f64>().ok())
             .unwrap_or(f64::NAN);
-        if rust_val.is_nan() && golden_val.is_nan() { continue; }
+        if rust_val.is_nan() && golden_val.is_nan() {
+            continue;
+        }
         assert_close(rust_val, golden_val, TOL, &format!("GL1 pt row {}", i));
     }
 }
@@ -452,10 +473,8 @@ fn gl1_tsse_within_tolerance() {
         std::fs::read_to_string(golden_path("GL1", "tsse", "json")).expect("read tsse golden");
     let golden: serde_json::Value = serde_json::from_str(&golden_str).expect("parse tsse golden");
 
-    let summary_str = std::fs::read_to_string(
-        outdir.path().join("GL1.atac.summary.json"),
-    )
-    .expect("read summary");
+    let summary_str =
+        std::fs::read_to_string(outdir.path().join("GL1.atac.summary.json")).expect("read summary");
     let summary: serde_json::Value = serde_json::from_str(&summary_str).expect("parse summary");
 
     let rust_score = summary["tsse"]["score"].as_f64().expect("tsse.score");

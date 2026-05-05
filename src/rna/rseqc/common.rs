@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet};
 use indexmap::IndexMap;
 use log::debug;
 
-use crate::gtf::Gene;
 use crate::bam_io::CigarKind;
+use crate::gtf::Gene;
 
 // ===================================================================
 // CIGAR intron extraction

@@ -39,13 +39,12 @@ pub fn fragsize_svg(rows: &[(u32, u64, f64)], path: &Path, sample: &str) -> Resu
     top.draw(&Text::new(
         sample,
         (cx, 22),
-        ("sans-serif", 12u32)
-            .into_font()
-            .color(&BLACK)
-            .pos(plotters::style::text_anchor::Pos::new(
+        ("sans-serif", 12u32).into_font().color(&BLACK).pos(
+            plotters::style::text_anchor::Pos::new(
                 plotters::style::text_anchor::HPos::Center,
                 plotters::style::text_anchor::VPos::Top,
-            )),
+            ),
+        ),
     ))?;
 
     // Only draw non-zero region to determine y_max.
@@ -54,11 +53,7 @@ pub fn fragsize_svg(rows: &[(u32, u64, f64)], path: &Path, sample: &str) -> Resu
         .map(|&(l, _, d)| (l as f64, d * 1000.0))
         .collect();
 
-    let y_max = data
-        .iter()
-        .map(|(_, y)| *y)
-        .fold(0.0f64, f64::max)
-        .max(1.0);
+    let y_max = data.iter().map(|(_, y)| *y).fold(0.0f64, f64::max).max(1.0);
 
     let mut chart = ChartBuilder::on(&plot_area)
         .margin_top(5u32)
@@ -114,13 +109,12 @@ pub fn tsse_svg(values: &[f64], path: &Path, sample: &str) -> Result<()> {
     top.draw(&Text::new(
         sample,
         (cx, 22),
-        ("sans-serif", 12u32)
-            .into_font()
-            .color(&BLACK)
-            .pos(plotters::style::text_anchor::Pos::new(
+        ("sans-serif", 12u32).into_font().color(&BLACK).pos(
+            plotters::style::text_anchor::Pos::new(
                 plotters::style::text_anchor::HPos::Center,
                 plotters::style::text_anchor::VPos::Top,
-            )),
+            ),
+        ),
     ))?;
 
     let n = values.len();
@@ -207,13 +201,12 @@ pub fn lib_complexity_svg(rows: &[LibComplexityRow], path: &Path, sample: &str) 
     top.draw(&Text::new(
         sample,
         (cx, 22),
-        ("sans-serif", 12u32)
-            .into_font()
-            .color(&BLACK)
-            .pos(plotters::style::text_anchor::Pos::new(
+        ("sans-serif", 12u32).into_font().color(&BLACK).pos(
+            plotters::style::text_anchor::Pos::new(
                 plotters::style::text_anchor::HPos::Center,
                 plotters::style::text_anchor::VPos::Top,
-            )),
+            ),
+        ),
     ))?;
 
     // Convert to millions; skip NaN rows.
@@ -262,10 +255,7 @@ pub fn lib_complexity_svg(rows: &[LibComplexityRow], path: &Path, sample: &str) 
         .draw()?;
 
     chart.draw_series(LineSeries::new(data.clone(), GREEN.stroke_width(2)))?;
-    chart.draw_series(
-        data.iter()
-            .map(|&pt| Circle::new(pt, 3u32, GREEN.filled())),
-    )?;
+    chart.draw_series(data.iter().map(|&pt| Circle::new(pt, 3u32, GREEN.filled())))?;
 
     plot_area.present()?;
     Ok(())

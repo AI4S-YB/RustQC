@@ -6,7 +6,9 @@
 pub fn loess_smooth(xs: &[f64], ys: &[f64], span: f64, degree: usize) -> Vec<f64> {
     assert_eq!(xs.len(), ys.len());
     let n = xs.len();
-    if n == 0 { return vec![]; }
+    if n == 0 {
+        return vec![];
+    }
     let q = ((span * n as f64).ceil() as usize).clamp(degree + 1, n);
     let mut out = Vec::with_capacity(n);
     for &x0 in xs {
@@ -16,11 +18,14 @@ pub fn loess_smooth(xs: &[f64], ys: &[f64], span: f64, degree: usize) -> Vec<f64
         let nbrs: Vec<usize> = dists.iter().take(q).map(|(i, _)| *i).collect();
         let max_d = dists[q - 1].1.max(f64::MIN_POSITIVE);
         // Tricube weights.
-        let w: Vec<f64> = nbrs.iter().map(|&i| {
-            let u = (xs[i] - x0).abs() / max_d;
-            let one_minus = (1.0 - u.powi(3)).max(0.0);
-            one_minus.powi(3)
-        }).collect();
+        let w: Vec<f64> = nbrs
+            .iter()
+            .map(|&i| {
+                let u = (xs[i] - x0).abs() / max_d;
+                let one_minus = (1.0 - u.powi(3)).max(0.0);
+                one_minus.powi(3)
+            })
+            .collect();
         // Solve weighted least squares y ~ poly(x − x0, degree) by normal equations.
         // Build X (q × (degree+1)) and W (diagonal, weights).
         let p = degree + 1;
@@ -29,10 +34,14 @@ pub fn loess_smooth(xs: &[f64], ys: &[f64], span: f64, degree: usize) -> Vec<f64
         for (k, &i) in nbrs.iter().enumerate() {
             let dx = xs[i] - x0;
             let mut row = vec![1.0f64; p];
-            for j in 1..p { row[j] = row[j - 1] * dx; }
+            for j in 1..p {
+                row[j] = row[j - 1] * dx;
+            }
             let wk = w[k];
             for a in 0..p {
-                for b in 0..p { xtwx[a * p + b] += row[a] * row[b] * wk; }
+                for b in 0..p {
+                    xtwx[a * p + b] += row[a] * row[b] * wk;
+                }
                 xtwy[a] += row[a] * ys[i] * wk;
             }
         }
@@ -49,19 +58,29 @@ fn solve_linear(a: &mut [f64], b: &mut [f64], p: usize) -> Vec<f64> {
     for k in 0..p {
         // Pivot.
         let mut piv = k;
-        for r in k+1..p {
-            if a[r * p + k].abs() > a[piv * p + k].abs() { piv = r; }
+        for r in k + 1..p {
+            if a[r * p + k].abs() > a[piv * p + k].abs() {
+                piv = r;
+            }
         }
         if piv != k {
-            for c in 0..p { a.swap(k * p + c, piv * p + c); }
+            for c in 0..p {
+                a.swap(k * p + c, piv * p + c);
+            }
             b.swap(k, piv);
         }
         let akk = a[k * p + k];
-        if akk.abs() < 1e-15 { return vec![0.0; p]; }
+        if akk.abs() < 1e-15 {
+            return vec![0.0; p];
+        }
         for r in 0..p {
-            if r == k { continue; }
+            if r == k {
+                continue;
+            }
             let factor = a[r * p + k] / akk;
-            for c in k..p { a[r * p + c] -= factor * a[k * p + c]; }
+            for c in k..p {
+                a[r * p + c] -= factor * a[k * p + c];
+            }
             b[r] -= factor * b[k];
         }
     }
@@ -79,7 +98,12 @@ mod tests {
         // span=1.0 + degree=2 → exact recovery of a quadratic.
         let fit = loess_smooth(&xs, &ys, 1.0, 2);
         for (a, b) in fit.iter().zip(ys.iter()) {
-            assert!((a - b).abs() < 1e-6, "loess(span=1) on quadratic: {} vs {}", a, b);
+            assert!(
+                (a - b).abs() < 1e-6,
+                "loess(span=1) on quadratic: {} vs {}",
+                a,
+                b
+            );
         }
     }
 
@@ -87,7 +111,9 @@ mod tests {
     fn fits_constant_signal() {
         let xs: Vec<f64> = (1..=20).map(|i| i as f64).collect();
         let ys = vec![5.0; 20];
-        let fit = loess_smooth(&xs, &ys, 2.0/3.0, 2);
-        for v in fit { assert!((v - 5.0).abs() < 1e-9, "{}", v); }
+        let fit = loess_smooth(&xs, &ys, 2.0 / 3.0, 2);
+        for v in fit {
+            assert!((v - 5.0).abs() < 1e-9, "{}", v);
+        }
     }
 }

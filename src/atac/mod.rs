@@ -55,8 +55,7 @@ fn metric_path(outdir: &str, flat: bool, subdir: &str, filename: &str) -> PathBu
 /// the `atac:` section, and merges it with CLI flags via [`resolve`].
 pub fn run(args: AtacArgs) -> Result<()> {
     // Load merged config from all sources (same pattern as run_rna in main.rs).
-    let (full_cfg, _config_sources) =
-        crate::config::load_merged_config(args.config.as_deref())?;
+    let (full_cfg, _config_sources) = crate::config::load_merged_config(args.config.as_deref())?;
     let atac_cfg = full_cfg.atac;
 
     let cfg = resolve(&args, &atac_cfg);
@@ -89,9 +88,14 @@ pub fn run(args: AtacArgs) -> Result<()> {
     let tss_list = crate::gtf::extract_tss(Path::new(&cfg.gtf))
         .with_context(|| format!("failed to parse GTF: {}", cfg.gtf))?;
     if tss_list.is_empty() {
-        eprintln!("[rustqc atac] WARNING: no TSS entries extracted from GTF — TSS metrics will be empty");
+        eprintln!(
+            "[rustqc atac] WARNING: no TSS entries extracted from GTF — TSS metrics will be empty"
+        );
     } else {
-        eprintln!("[rustqc atac] loaded {} TSS entries from GTF", tss_list.len());
+        eprintln!(
+            "[rustqc atac] loaded {} TSS entries from GTF",
+            tss_list.len()
+        );
     }
 
     // Resolve flank.
@@ -99,8 +103,8 @@ pub fn run(args: AtacArgs) -> Result<()> {
     let mut tss_cov = TssCov::new(tss_list, flank);
 
     // Open BAM.
-    let (mut reader, header) = bam_io::open(Path::new(input))
-        .with_context(|| format!("failed to open BAM: {}", input))?;
+    let (mut reader, header) =
+        bam_io::open(Path::new(input)).with_context(|| format!("failed to open BAM: {}", input))?;
 
     // Get chromosome names.
     let seq_names: Vec<String> = bam_io::reference_sequences(&header)
@@ -109,9 +113,10 @@ pub fn run(args: AtacArgs) -> Result<()> {
         .collect();
 
     // Detect mitochondrial chromosome.
-    let mito = cfg.mito_chrom.clone().or_else(|| {
-        mito::detect_mito(&seq_names).map(String::from)
-    });
+    let mito = cfg
+        .mito_chrom
+        .clone()
+        .or_else(|| mito::detect_mito(&seq_names).map(String::from));
     if let Some(ref m) = mito {
         eprintln!("[rustqc atac] mito chromosome: {}", m);
     }
@@ -175,9 +180,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
         //   - paired-end (flag 0x1)
         //   - this mate mapped (flag 0x4 unset)
         //   - mate also mapped (flag 0x8 unset; drops singletons)
-        let is_pe_both_mapped = (flags & 0x1) != 0
-            && (flags & 0x4) == 0
-            && (flags & 0x8) == 0;
+        let is_pe_both_mapped = (flags & 0x1) != 0 && (flags & 0x4) == 0 && (flags & 0x8) == 0;
         let pos0 = bam_io::pos_0based(&record);
         if pos0 >= 0 && is_pe_both_mapped {
             let is_reverse = flags & 0x10 != 0;
@@ -205,7 +208,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
         if (flags & 0x1) != 0 && (flags & 0x4) == 0 && (flags & 0x8) == 0 {
             let is_first = flags & 0x40 != 0;
             let mate_tid = bam_io::mtid(&record);
-                if mate_tid as usize == tid {
+            if mate_tid as usize == tid {
                 // Same-chromosome pairs only.
                 if let Some(prev) = mate_buffer.remove(q) {
                     let (p1, t1, p2, t2) = if is_first {
@@ -219,7 +222,13 @@ pub fn run(args: AtacArgs) -> Result<()> {
                     let abs_isize = t1.abs().max(t2.abs());
                     dup.add_pe(tid as u32, leftpos, abs_isize);
                 } else {
-                    mate_buffer.insert(q.to_vec(), FirstMateInfo { pos1: pos0 + 1, tlen });
+                    mate_buffer.insert(
+                        q.to_vec(),
+                        FirstMateInfo {
+                            pos1: pos0 + 1,
+                            tlen,
+                        },
+                    );
                 }
             }
         }
@@ -234,8 +243,8 @@ pub fn run(args: AtacArgs) -> Result<()> {
     let pt_rows = pt_score::compute(&tss_cov);
     let frag_rows = frag.finalize();
     let dup_hist = dup.histogram();
-    let lib_rows = lib_complexity::estimate(&dup_hist, 100)
-        .context("library complexity estimation failed")?;
+    let lib_rows =
+        lib_complexity::estimate(&dup_hist, 100).context("library complexity estimation failed")?;
 
     // Compute median NFR/PT scores for JSON summary.
     let nfr_median = median(nfr_rows.iter().map(|r| r.nfr_score).collect());
@@ -250,14 +259,12 @@ pub fn run(args: AtacArgs) -> Result<()> {
             fs::create_dir_all(Path::new(outdir).join(sub))
                 .with_context(|| format!("create_dir_all {}/{}", outdir, sub))?;
         } else {
-            fs::create_dir_all(outdir)
-                .with_context(|| format!("create_dir_all {}", outdir))?;
+            fs::create_dir_all(outdir).with_context(|| format!("create_dir_all {}", outdir))?;
         }
         Ok(())
     };
 
-    fs::create_dir_all(outdir)
-        .with_context(|| format!("create_dir_all {}", outdir))?;
+    fs::create_dir_all(outdir).with_context(|| format!("create_dir_all {}", outdir))?;
     mk("bamqc")?;
     mk("fragsize")?;
     mk("tsse")?;
@@ -268,7 +275,8 @@ pub fn run(args: AtacArgs) -> Result<()> {
     // ── Write bamQC TSV ───────────────────────────────────────────────────────
     {
         let p = metric_path(outdir, flat, "bamqc", &format!("{}.bamqc.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "sample\ttotal_qnames\tduplicate_rate\tmitochondria_rate\tproper_pair_rate\tunmapped_rate\thas_unmapped_mate_rate\tnot_passing_qc_rate\tnrf\tpbc1\tpbc2")?;
         // {:.17e} preserves full f64 precision so downstream tools can re-parse
@@ -293,7 +301,8 @@ pub fn run(args: AtacArgs) -> Result<()> {
     // ── Write MAPQ histogram TSV ──────────────────────────────────────────────
     {
         let p = metric_path(outdir, flat, "bamqc", &format!("{}.mapq.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "mapq\tcount")?;
         for (q, c) in &bq_report.mapq_hist {
@@ -303,15 +312,22 @@ pub fn run(args: AtacArgs) -> Result<()> {
 
     // ── Write fragSize TSV ────────────────────────────────────────────────────
     {
-        let p = metric_path(outdir, flat, "fragsize", &format!("{}.fragsize.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let p = metric_path(
+            outdir,
+            flat,
+            "fragsize",
+            &format!("{}.fragsize.tsv", sample),
+        );
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         frag_size::write_tsv(&mut w, &frag_rows)?;
     }
 
     // ── Write TSSE TSV ────────────────────────────────────────────────────────
     {
         let p = metric_path(outdir, flat, "tsse", &format!("{}.tsse.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "window_idx\tnorm_signal")?;
         for (i, v) in tsse_result.values.iter().enumerate() {
@@ -322,41 +338,64 @@ pub fn run(args: AtacArgs) -> Result<()> {
     // ── Write NFR TSV ─────────────────────────────────────────────────────────
     {
         let p = metric_path(outdir, flat, "nfr", &format!("{}.nfr.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "tss_idx\tn1\tnf\tn2\tnfr_score\tlog2meancov")?;
         for r in &nfr_rows {
-            writeln!(w, "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-                r.tss_idx, r.n1, r.nf, r.n2, r.nfr_score, r.log2_mean_cov)?;
+            writeln!(
+                w,
+                "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                r.tss_idx, r.n1, r.nf, r.n2, r.nfr_score, r.log2_mean_cov
+            )?;
         }
     }
 
     // ── Write PT TSV ──────────────────────────────────────────────────────────
     {
         let p = metric_path(outdir, flat, "pt", &format!("{}.pt.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "tss_idx\tpromoter\tbody\tpt_score\tlog2meancov")?;
         for r in &pt_rows {
-            writeln!(w, "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-                r.tss_idx, r.promoter, r.body, r.pt_score, r.log2_mean_cov)?;
+            writeln!(
+                w,
+                "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+                r.tss_idx, r.promoter, r.body, r.pt_score, r.log2_mean_cov
+            )?;
         }
     }
 
     // ── Write lib_complexity TSV ──────────────────────────────────────────────
     {
-        let p = metric_path(outdir, flat, "lib_complexity", &format!("{}.libcomplexity.tsv", sample));
-        let mut w = BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
+        let p = metric_path(
+            outdir,
+            flat,
+            "lib_complexity",
+            &format!("{}.libcomplexity.tsv", sample),
+        );
+        let mut w =
+            BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "relative_size\tdistinct_fragments\tputative_reads")?;
         for r in &lib_rows {
-            writeln!(w, "{:.2}\t{:.2}\t{:.2}", r.relative_size, r.distinct_fragments, r.putative_reads)?;
+            writeln!(
+                w,
+                "{:.2}\t{:.2}\t{:.2}",
+                r.relative_size, r.distinct_fragments, r.putative_reads
+            )?;
         }
     }
 
     // ── Write SVG plots ───────────────────────────────────────────────────────
     {
-        let p = metric_path(outdir, flat, "fragsize", &format!("{}.fragsize.svg", sample));
+        let p = metric_path(
+            outdir,
+            flat,
+            "fragsize",
+            &format!("{}.fragsize.svg", sample),
+        );
         plots::fragsize_svg(&frag_rows, &p, &sample)
             .with_context(|| format!("fragsize SVG: {}", p.display()))?;
     }
@@ -366,7 +405,12 @@ pub fn run(args: AtacArgs) -> Result<()> {
             .with_context(|| format!("TSSE SVG: {}", p.display()))?;
     }
     {
-        let p = metric_path(outdir, flat, "lib_complexity", &format!("{}.libcomplexity.svg", sample));
+        let p = metric_path(
+            outdir,
+            flat,
+            "lib_complexity",
+            &format!("{}.libcomplexity.svg", sample),
+        );
         plots::lib_complexity_svg(&lib_rows, &p, &sample)
             .with_context(|| format!("lib_complexity SVG: {}", p.display()))?;
     }
@@ -403,7 +447,13 @@ pub fn run(args: AtacArgs) -> Result<()> {
     let extrapolated_total: Option<f64> = lib_rows
         .iter()
         .find(|r| (r.relative_size - 1.0).abs() < 1e-9)
-        .and_then(|r| if r.distinct_fragments.is_nan() { None } else { Some(r.distinct_fragments) });
+        .and_then(|r| {
+            if r.distinct_fragments.is_nan() {
+                None
+            } else {
+                Some(r.distinct_fragments)
+            }
+        });
 
     let atac_summary = summary::AtacSummary {
         schema_version: "1.0".to_string(),
@@ -536,7 +586,10 @@ pub fn resolve(args: &AtacArgs, atac_cfg: &AtacConfig) -> ResolvedAtacConfig {
         sample_name: args.sample_name.clone(),
         flat_output: args.flat_output,
         json_summary: args.json_summary.clone(),
-        mito_chrom: args.mito_chrom.clone().or_else(|| atac_cfg.mito_chrom.clone()),
+        mito_chrom: args
+            .mito_chrom
+            .clone()
+            .or_else(|| atac_cfg.mito_chrom.clone()),
         tsse_flank: args
             .tsse_flank
             .or(atac_cfg.tsse_flank)

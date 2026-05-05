@@ -21,7 +21,10 @@ impl DupFreqAccum {
     /// Record one observation of the PE fragment defined by
     /// `(chrom_id, leftpos, isize)`.
     pub fn add_pe(&mut self, chrom_id: u32, leftpos: i64, isize: i64) {
-        *self.fingerprints.entry((chrom_id, leftpos, isize)).or_default() += 1;
+        *self
+            .fingerprints
+            .entry((chrom_id, leftpos, isize))
+            .or_default() += 1;
     }
 
     /// Build histogram rows: `Vec<(j, n_j)>` sorted by `j` ascending,
@@ -80,14 +83,12 @@ pub fn estimate(hist: &[(u64, u64)], times: u32) -> anyhow::Result<Vec<LibComple
         .collect();
 
     // Convert relative sizes → absolute read counts for preseq
-    let targets: Vec<f64> = relative_sizes
-        .iter()
-        .map(|&s| s * total as f64)
-        .collect();
+    let targets: Vec<f64> = relative_sizes.iter().map(|&s| s * total as f64).collect();
 
     // Bootstrap SAC curve at our explicit targets.
     // We use seed 408 (matching upstream preseq default) for reproducibility.
-    let estimates = crate::preseq::estimate_at_targets(hist, total, n_distinct, &targets, times, 408)?;
+    let estimates =
+        crate::preseq::estimate_at_targets(hist, total, n_distinct, &targets, times, 408)?;
 
     let rows = relative_sizes
         .into_iter()

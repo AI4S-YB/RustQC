@@ -420,23 +420,52 @@ pub struct AtacArgs {
     pub input: Vec<String>,
 
     /// GTF gene annotation (plain or .gz); TSS coords source
-    #[arg(short, long, value_name = "GTF", env = "RUSTQC_GTF", help_heading = "Input / Output")]
+    #[arg(
+        short,
+        long,
+        value_name = "GTF",
+        env = "RUSTQC_GTF",
+        help_heading = "Input / Output"
+    )]
     pub gtf: String,
 
     /// Reference FASTA (required for CRAM)
-    #[arg(short, long, value_name = "FASTA", env = "RUSTQC_REFERENCE", help_heading = "Input / Output")]
+    #[arg(
+        short,
+        long,
+        value_name = "FASTA",
+        env = "RUSTQC_REFERENCE",
+        help_heading = "Input / Output"
+    )]
     pub reference: Option<String>,
 
     /// Output directory [default: .]
-    #[arg(short, long, default_value = ".", hide_default_value = true, env = "RUSTQC_OUTDIR", help_heading = "Input / Output")]
+    #[arg(
+        short,
+        long,
+        default_value = ".",
+        hide_default_value = true,
+        env = "RUSTQC_OUTDIR",
+        help_heading = "Input / Output"
+    )]
     pub outdir: String,
 
     /// Override sample name (default: derived from BAM filename)
-    #[arg(long, value_name = "NAME", env = "RUSTQC_SAMPLE_NAME", help_heading = "Input / Output")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        env = "RUSTQC_SAMPLE_NAME",
+        help_heading = "Input / Output"
+    )]
     pub sample_name: Option<String>,
 
     /// Write outputs to a flat directory (no subdirs)
-    #[arg(long, default_value_t = false, env = "RUSTQC_FLAT_OUTPUT", help_heading = "Input / Output")]
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_FLAT_OUTPUT",
+        help_heading = "Input / Output"
+    )]
     pub flat_output: bool,
 
     /// YAML configuration file
@@ -449,36 +478,82 @@ pub struct AtacArgs {
 
     // ── ATAC-specific ───────────────────────────────────────────────────
     /// Mitochondrial chromosome name (default: auto-detect ^chrM$|^MT$|^Mito$)
-    #[arg(long, value_name = "NAME", env = "RUSTQC_MITO_CHROM", help_heading = "ATAC-specific")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        env = "RUSTQC_MITO_CHROM",
+        help_heading = "ATAC-specific"
+    )]
     pub mito_chrom: Option<String>,
 
     /// Emit +4/-5 Tn5-shifted BAM (reserved; file writing not yet implemented)
-    #[arg(long, default_value_t = false, env = "RUSTQC_EMIT_SHIFTED_BAM", help_heading = "ATAC-specific")]
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_EMIT_SHIFTED_BAM",
+        help_heading = "ATAC-specific"
+    )]
     pub emit_shifted_bam: bool,
 
     /// Emit NFR/mono/di/tri BAMs (fixed intervals) (reserved; file writing not yet implemented)
-    #[arg(long, default_value_t = false, env = "RUSTQC_EMIT_SPLIT_BAMS", help_heading = "ATAC-specific")]
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_EMIT_SPLIT_BAMS",
+        help_heading = "ATAC-specific"
+    )]
     pub emit_split_bams: bool,
 
     /// TSSEscore flank (bp) [default: 1000]
-    #[arg(long, value_name = "N", env = "RUSTQC_TSSE_FLANK", help_heading = "ATAC-specific")]
+    #[arg(
+        long,
+        value_name = "N",
+        env = "RUSTQC_TSSE_FLANK",
+        help_heading = "ATAC-specific"
+    )]
     pub tsse_flank: Option<u32>,
 
     // ── General ─────────────────────────────────────────────────────────
     /// Number of threads [default: 1]
-    #[arg(short, long, default_value_t = 1, hide_default_value = true, env = "RUSTQC_THREADS", help_heading = "General")]
+    #[arg(
+        short,
+        long,
+        default_value_t = 1,
+        hide_default_value = true,
+        env = "RUSTQC_THREADS",
+        help_heading = "General"
+    )]
     pub threads: usize,
 
     /// MAPQ threshold (currently informational only; does not filter records — matches ATACseqQC behavior) [default: 30]
-    #[arg(short = 'Q', long = "mapq", default_value_t = 30, hide_default_value = true, env = "RUSTQC_MAPQ", help_heading = "General")]
+    #[arg(
+        short = 'Q',
+        long = "mapq",
+        default_value_t = 30,
+        hide_default_value = true,
+        env = "RUSTQC_MAPQ",
+        help_heading = "General"
+    )]
     pub mapq_cut: u8,
 
     /// Suppress output except warnings/errors
-    #[arg(short = 'q', long, conflicts_with = "verbose", env = "RUSTQC_QUIET", help_heading = "General")]
+    #[arg(
+        short = 'q',
+        long,
+        conflicts_with = "verbose",
+        env = "RUSTQC_QUIET",
+        help_heading = "General"
+    )]
     pub quiet: bool,
 
     /// Show additional detail
-    #[arg(short = 'v', long, conflicts_with = "quiet", env = "RUSTQC_VERBOSE", help_heading = "General")]
+    #[arg(
+        short = 'v',
+        long,
+        conflicts_with = "quiet",
+        env = "RUSTQC_VERBOSE",
+        help_heading = "General"
+    )]
     pub verbose: bool,
 }
 
@@ -728,9 +803,17 @@ mod tests {
     #[test]
     fn test_atac_emit_flags() {
         let cli = Cli::parse_from([
-            "rustqc", "atac", "test.bam", "--gtf", "genes.gtf",
-            "--emit-shifted-bam", "--emit-split-bams",
-            "--mito-chrom", "MT", "--tsse-flank", "2000",
+            "rustqc",
+            "atac",
+            "test.bam",
+            "--gtf",
+            "genes.gtf",
+            "--emit-shifted-bam",
+            "--emit-split-bams",
+            "--mito-chrom",
+            "MT",
+            "--tsse-flank",
+            "2000",
         ]);
         match cli.command {
             Commands::Atac(args) => {

@@ -12,14 +12,25 @@ pub struct ShiftedFrag {
 
 #[allow(dead_code)]
 pub fn shift_5prime(pos5p: u64, is_plus: bool, tlen: i64) -> Option<ShiftedFrag> {
-    let new_pos = if is_plus { pos5p + 4 } else { pos5p.checked_sub(5)? };
-    let new_tlen = if tlen == 0 { 0 } else {
+    let new_pos = if is_plus {
+        pos5p + 4
+    } else {
+        pos5p.checked_sub(5)?
+    };
+    let new_tlen = if tlen == 0 {
+        0
+    } else {
         let sign = tlen.signum();
         let abs = tlen.unsigned_abs() as i64;
-        if abs <= 9 { return None; }
+        if abs <= 9 {
+            return None;
+        }
         sign * (abs - 9)
     };
-    Some(ShiftedFrag { pos5p: new_pos, tlen: new_tlen })
+    Some(ShiftedFrag {
+        pos5p: new_pos,
+        tlen: new_tlen,
+    })
 }
 
 #[cfg(test)]

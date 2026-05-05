@@ -159,20 +159,46 @@ mod tests {
         let j = &v;
 
         // Assert top-level keys per spec.
-        for k in ["sample", "tool_versions", "split_method", "bamqc", "fragsize", "tsse", "nfr", "pt", "lib_complexity"] {
+        for k in [
+            "sample",
+            "tool_versions",
+            "split_method",
+            "bamqc",
+            "fragsize",
+            "tsse",
+            "nfr",
+            "pt",
+            "lib_complexity",
+        ] {
             assert!(j.get(k).is_some(), "missing top-level key: {}", k);
         }
 
         // Assert bamqc fields per spec.
-        for k in ["total_qnames", "duplicate_rate", "mitochondria_rate", "proper_pair_rate",
-                  "unmapped_rate", "has_unmapped_mate_rate", "not_passing_qc_rate",
-                  "nrf", "pbc1", "pbc2", "mapq_histogram"] {
+        for k in [
+            "total_qnames",
+            "duplicate_rate",
+            "mitochondria_rate",
+            "proper_pair_rate",
+            "unmapped_rate",
+            "has_unmapped_mate_rate",
+            "not_passing_qc_rate",
+            "nrf",
+            "pbc1",
+            "pbc2",
+            "mapq_histogram",
+        ] {
             assert!(j["bamqc"].get(k).is_some(), "bamqc missing {}", k);
         }
 
         // Assert tool_versions fields per spec.
-        assert!(j["tool_versions"].get("rustqc").is_some(), "tool_versions missing rustqc");
-        assert!(j["tool_versions"].get("atacseqqc_replicates").is_some(), "tool_versions missing atacseqqc_replicates");
+        assert!(
+            j["tool_versions"].get("rustqc").is_some(),
+            "tool_versions missing rustqc"
+        );
+        assert!(
+            j["tool_versions"].get("atacseqqc_replicates").is_some(),
+            "tool_versions missing atacseqqc_replicates"
+        );
 
         // Assert split_method value.
         assert_eq!(j["split_method"].as_str().unwrap(), "fixed_intervals_v1");
@@ -186,13 +212,22 @@ mod tests {
         assert_eq!(hist_rt["60"].as_u64().unwrap(), 200);
 
         // Assert tsv_path fields exist.
-        assert!(j["fragsize"].get("tsv_path").is_some(), "fragsize missing tsv_path");
+        assert!(
+            j["fragsize"].get("tsv_path").is_some(),
+            "fragsize missing tsv_path"
+        );
         assert!(j["tsse"].get("tsv_path").is_some(), "tsse missing tsv_path");
         assert!(j["nfr"].get("tsv_path").is_some(), "nfr missing tsv_path");
         assert!(j["pt"].get("tsv_path").is_some(), "pt missing tsv_path");
-        assert!(j["lib_complexity"].get("tsv_path").is_some(), "lib_complexity missing tsv_path");
+        assert!(
+            j["lib_complexity"].get("tsv_path").is_some(),
+            "lib_complexity missing tsv_path"
+        );
 
         // extrapolated_total present (may be null for NaN fixtures).
-        assert!(j["lib_complexity"].get("extrapolated_total").is_some(), "lib_complexity missing extrapolated_total");
+        assert!(
+            j["lib_complexity"].get("extrapolated_total").is_some(),
+            "lib_complexity missing extrapolated_total"
+        );
     }
 }
