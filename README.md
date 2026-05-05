@@ -6,7 +6,7 @@
 </picture>
 </h1>
 
-<h4 align="center">Fast genomics quality control tools for sequencing data, written in Rust.</h4>
+<h4 align="center">Fast genomics quality control tools for RNA-seq and ATAC-seq data, written in Rust.</h4>
 
 <p align="center">
   <a href="https://github.com/seqeralabs/RustQC/actions/workflows/ci.yml"><img src="https://github.com/seqeralabs/RustQC/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -36,7 +36,12 @@
 
 It currently includes:
 
-- `rustqc rna` is a single-command RNA-Seq QC tool that runs all QC analyses in one pass. Designed to slot into the [nf-core/rnaseq pipeline](https://nf-co.re/rnaseq/), but works anywhere:
+- `rustqc rna` — single-command RNA-Seq QC, designed to slot into the [nf-core/rnaseq pipeline](https://nf-co.re/rnaseq/), but works anywhere:
+- `rustqc atac` — single-command ATAC-seq QC, designed to slot into the [nf-core/atacseq pipeline](https://nf-co.re/atacseq/), but works anywhere.
+
+### `rustqc rna`
+
+`rustqc rna` is a single-command RNA-Seq QC tool that runs all QC analyses in one pass:
 
 | Tool                | Reimplements                                                                            | Description                                                           |
 | ------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -56,7 +61,22 @@ It currently includes:
 | idxstats            | [samtools](http://www.htslib.org/) `idxstats`                                           | Per-chromosome read counts                                            |
 | stats               | [samtools](http://www.htslib.org/) `stats`                                              | Full samtools stats output including all histogram sections           |
 
-All outputs are format- and numerically identical to the upstream tools, and compatible with [MultiQC](https://multiqc.info/) for reporting.
+All RNA outputs are format- and numerically identical to the upstream tools, and compatible with [MultiQC](https://multiqc.info/) for reporting.
+
+### `rustqc atac`
+
+`rustqc atac` is a single-command ATAC-seq QC tool that runs all QC analyses in one pass, replicating [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) 1.36.0:
+
+| Module | Reimplements | Description |
+| ------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| bamQC | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `bamQC` | Mapping rates, NRF, PBC1/2, MAPQ histogram |
+| fragSizeDist | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `fragSizeDist` | Fragment-length distribution + plot |
+| TSSEscore | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `TSSEscore` | TSS enrichment score (sliding window + loess smoothing) |
+| NFRscore | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `NFRscore` | Nucleosome-free region score per TSS |
+| PTscore | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `PTscore` | Promoter / transcript-body score per TSS |
+| estimateLibComplexity | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `estimateLibComplexity` | Library complexity extrapolation (preseq) |
+| Tn5 shift | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `shiftGAlignmentsList` | +4/−5 Tn5 shift |
+| Split (fixed) | [ATACseqQC](https://bioconductor.org/packages/ATACseqQC/) `splitGAlignmentsByCut` (fixed-interval) | NFR/mono/di/tri length split |
 
 ## Quick start
 

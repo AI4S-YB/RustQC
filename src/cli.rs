@@ -50,6 +50,7 @@ pub struct Cli {
 
 /// Available analysis subcommands.
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// RNA-Seq QC — single-pass analysis of BAM/SAM/CRAM files.
     ///
@@ -57,6 +58,13 @@ pub enum Commands {
     /// analyses in one pass. Requires a GTF annotation and duplicate-marked
     /// (not removed) alignments.
     Rna(RnaArgs),
+
+    /// ATAC-Seq QC — single-pass analysis of paired-end BAM/SAM/CRAM files.
+    ///
+    /// Runs bamQC, fragSizeDist, TSSEscore, NFRscore, PTscore, and library
+    /// complexity in one pass. Requires a GTF annotation and paired-end input.
+    /// Optionally emits Tn5-shifted and length-split BAMs.
+    Atac(AtacArgs),
 }
 
 /// Arguments for the `rna` subcommand.
@@ -394,6 +402,161 @@ pub struct RnaArgs {
     pub preseq_seg_len: Option<i64>,
 }
 
+/// Arguments for the `atac` subcommand.
+#[derive(Parser, Debug)]
+#[command(
+    next_line_help = false,
+    term_width = 120,
+    help_template = "\
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}"
+)]
+pub struct AtacArgs {
+    // ── Input / Output ──────────────────────────────────────────────────
+    /// Paired-end BAM/SAM/CRAM (single-end inputs are rejected at startup)
+    #[arg(value_name = "INPUT", num_args = 1.., required = true, help_heading = "Input / Output")]
+    pub input: Vec<String>,
+
+    /// GTF gene annotation (plain or .gz); TSS coords source
+    #[arg(
+        short,
+        long,
+        value_name = "GTF",
+        env = "RUSTQC_GTF",
+        help_heading = "Input / Output"
+    )]
+    pub gtf: String,
+
+    /// Reference FASTA (required for CRAM)
+    #[arg(
+        short,
+        long,
+        value_name = "FASTA",
+        env = "RUSTQC_REFERENCE",
+        help_heading = "Input / Output"
+    )]
+    pub reference: Option<String>,
+
+    /// Output directory [default: .]
+    #[arg(
+        short,
+        long,
+        default_value = ".",
+        hide_default_value = true,
+        env = "RUSTQC_OUTDIR",
+        help_heading = "Input / Output"
+    )]
+    pub outdir: String,
+
+    /// Override sample name (default: derived from BAM filename)
+    #[arg(
+        long,
+        value_name = "NAME",
+        env = "RUSTQC_SAMPLE_NAME",
+        help_heading = "Input / Output"
+    )]
+    pub sample_name: Option<String>,
+
+    /// Write outputs to a flat directory (no subdirs)
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_FLAT_OUTPUT",
+        help_heading = "Input / Output"
+    )]
+    pub flat_output: bool,
+
+    /// YAML configuration file
+    #[arg(short, long, value_name = "CONFIG", help_heading = "Input / Output")]
+    pub config: Option<String>,
+
+    /// JSON summary path (use "-" for stdout)
+    #[arg(short = 'j', long = "json-summary", value_name = "PATH", num_args = 0..=1, default_missing_value = "", env = "RUSTQC_JSON_SUMMARY", help_heading = "Input / Output")]
+    pub json_summary: Option<String>,
+
+    // ── ATAC-specific ───────────────────────────────────────────────────
+    /// Mitochondrial chromosome name (default: auto-detect ^chrM$|^MT$|^Mito$)
+    #[arg(
+        long,
+        value_name = "NAME",
+        env = "RUSTQC_MITO_CHROM",
+        help_heading = "ATAC-specific"
+    )]
+    pub mito_chrom: Option<String>,
+
+    /// Emit +4/-5 Tn5-shifted BAM (reserved; file writing not yet implemented)
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_EMIT_SHIFTED_BAM",
+        help_heading = "ATAC-specific"
+    )]
+    pub emit_shifted_bam: bool,
+
+    /// Emit NFR/mono/di/tri BAMs (fixed intervals) (reserved; file writing not yet implemented)
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "RUSTQC_EMIT_SPLIT_BAMS",
+        help_heading = "ATAC-specific"
+    )]
+    pub emit_split_bams: bool,
+
+    /// TSSEscore flank (bp) [default: 1000]
+    #[arg(
+        long,
+        value_name = "N",
+        env = "RUSTQC_TSSE_FLANK",
+        help_heading = "ATAC-specific"
+    )]
+    pub tsse_flank: Option<u32>,
+
+    // ── General ─────────────────────────────────────────────────────────
+    /// Number of threads [default: 1]
+    #[arg(
+        short,
+        long,
+        default_value_t = 1,
+        hide_default_value = true,
+        env = "RUSTQC_THREADS",
+        help_heading = "General"
+    )]
+    pub threads: usize,
+
+    /// MAPQ threshold (currently informational only; does not filter records — matches ATACseqQC behavior) [default: 30]
+    #[arg(
+        short = 'Q',
+        long = "mapq",
+        default_value_t = 30,
+        hide_default_value = true,
+        env = "RUSTQC_MAPQ",
+        help_heading = "General"
+    )]
+    pub mapq_cut: u8,
+
+    /// Suppress output except warnings/errors
+    #[arg(
+        short = 'q',
+        long,
+        conflicts_with = "verbose",
+        env = "RUSTQC_QUIET",
+        help_heading = "General"
+    )]
+    pub quiet: bool,
+
+    /// Show additional detail
+    #[arg(
+        short = 'v',
+        long,
+        conflicts_with = "quiet",
+        env = "RUSTQC_VERBOSE",
+        help_heading = "General"
+    )]
+    pub verbose: bool,
+}
+
 /// Parse command-line arguments and return the Cli struct.
 ///
 /// Sets a `long_version` that includes the git commit, build timestamp,
@@ -614,6 +777,53 @@ mod tests {
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Expected Rna subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_atac_default_args() {
+        let cli = Cli::parse_from(["rustqc", "atac", "test.bam", "--gtf", "genes.gtf"]);
+        match cli.command {
+            Commands::Atac(args) => {
+                assert_eq!(args.input, vec!["test.bam"]);
+                assert_eq!(args.gtf, "genes.gtf");
+                assert_eq!(args.outdir, ".");
+                assert_eq!(args.threads, 1);
+                assert_eq!(args.mapq_cut, 30);
+                assert!(!args.emit_shifted_bam);
+                assert!(!args.emit_split_bams);
+                assert_eq!(args.mito_chrom, None);
+                assert_eq!(args.tsse_flank, None);
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Expected Atac subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_atac_emit_flags() {
+        let cli = Cli::parse_from([
+            "rustqc",
+            "atac",
+            "test.bam",
+            "--gtf",
+            "genes.gtf",
+            "--emit-shifted-bam",
+            "--emit-split-bams",
+            "--mito-chrom",
+            "MT",
+            "--tsse-flank",
+            "2000",
+        ]);
+        match cli.command {
+            Commands::Atac(args) => {
+                assert!(args.emit_shifted_bam);
+                assert!(args.emit_split_bams);
+                assert_eq!(args.mito_chrom.as_deref(), Some("MT"));
+                assert_eq!(args.tsse_flank, Some(2000));
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Expected Atac subcommand"),
         }
     }
 }

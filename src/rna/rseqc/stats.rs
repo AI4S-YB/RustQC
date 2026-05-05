@@ -1006,7 +1006,7 @@ fn write_gc_depth(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rna::bam_io as bam;
+    use crate::bam_io as bam;
     use crate::rna::rseqc::accumulators::BamStatAccum;
     use std::io::Read;
     use std::path::Path;

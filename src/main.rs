@@ -9,12 +9,17 @@
 //! (flagstat, idxstats, stats), and Qualimap gene body coverage profiling.
 //! Individual tools can be disabled via the YAML config file.
 
+mod atac;
+mod bam_flags;
+mod bam_io;
 mod citations;
 mod cli;
 mod config;
+mod cpp_rng;
 mod cpu;
 mod gtf;
 mod io;
+mod preseq;
 mod rna;
 mod summary;
 mod ui;
@@ -28,8 +33,6 @@ use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ui::{format_count, format_duration, format_pct, Ui, Verbosity};
-
-use crate::rna::bam_io;
 
 use rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 
@@ -79,6 +82,8 @@ fn main() -> Result<()> {
     let verbosity = match &cli.command {
         cli::Commands::Rna(args) if args.quiet => Verbosity::Quiet,
         cli::Commands::Rna(args) if args.verbose => Verbosity::Verbose,
+        cli::Commands::Atac(args) if args.quiet => Verbosity::Quiet,
+        cli::Commands::Atac(args) if args.verbose => Verbosity::Verbose,
         _ => Verbosity::Normal,
     };
 
@@ -96,8 +101,11 @@ fn main() -> Result<()> {
     let ui = Ui::new(verbosity);
 
     match cli.command {
-        cli::Commands::Rna(args) => run_rna(args, &ui),
+        cli::Commands::Rna(args) => run_rna(args, &ui)?,
+        cli::Commands::Atac(args) => atac::run(args)?,
     }
+
+    Ok(())
 }
 
 /// Reconstruct the command line for the featureCounts-compatible header comment.
@@ -1840,18 +1848,14 @@ fn write_rseqc_outputs(
             total_reads,
             n_distinct,
         );
-        match rna::preseq::estimate_complexity(
+        match preseq::estimate_complexity(
             &histogram,
             total_reads,
             n_distinct,
             &params.config.preseq,
         ) {
             Ok(result) => {
-                rna::preseq::write_output(
-                    &result,
-                    &output_path,
-                    params.config.preseq.confidence_level,
-                )?;
+                preseq::write_output(&result, &output_path, params.config.preseq.confidence_level)?;
                 let p = output_path.display().to_string();
                 ui.output_item("preseq", &p);
                 ui.output_detail(&format!("{} extrapolation points", result.curve.len(),));

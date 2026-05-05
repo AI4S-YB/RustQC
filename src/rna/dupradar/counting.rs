@@ -9,9 +9,9 @@
 //!
 //! This implements a simplified featureCounts-compatible counting strategy.
 
+use crate::bam_io::{self as bam, CigarKind};
 use crate::cli::Strandedness;
 use crate::gtf::Gene;
-use crate::rna::bam_io::{self as bam, CigarKind};
 use crate::rna::qualimap::QualimapAccum;
 use crate::rna::rseqc::accumulators::{RseqcAccumulators, RseqcAnnotations, RseqcConfig};
 use crate::ui::format_count;
@@ -102,7 +102,7 @@ fn no_duplicates_error(mapped_count: u64, bam_path: &str) -> anyhow::Error {
 // BAM flag constants
 // ===================================================================
 
-use crate::rna::bam_flags::*;
+use crate::bam_flags::*;
 
 /// Counts for a single gene across the four counting modes.
 #[derive(Debug, Clone, Default)]

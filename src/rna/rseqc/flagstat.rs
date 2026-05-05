@@ -158,7 +158,7 @@ pub fn write_flagstat(result: &BamStatResult, output_path: &Path) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rna::bam_io as bam;
+    use crate::bam_io as bam;
     use crate::rna::rseqc::accumulators::BamStatAccum;
     use std::io::Read;
     use std::path::Path;

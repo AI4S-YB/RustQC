@@ -24,10 +24,10 @@ use super::junction_saturation::SaturationResult;
 use super::read_distribution::{ChromIntervals, ReadDistributionResult, RegionSets};
 use super::read_duplication::ReadDuplicationResult;
 use super::tin::TinAccum;
-use crate::rna::bam_io::{self as bam, CigarKind};
-use crate::rna::preseq::PreseqAccum;
+use crate::bam_io::{self as bam, CigarKind};
+use crate::preseq::PreseqAccum;
 
-use crate::rna::bam_flags::*;
+use crate::bam_flags::*;
 
 // ===================================================================
 // Shared references to annotation data

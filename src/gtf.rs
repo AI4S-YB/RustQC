@@ -434,6 +434,68 @@ pub fn attribute_exists_in_gtf(path: &str, attribute_name: &str, max_lines: usiz
     false
 }
 
+/// Strand of a genomic feature.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
+pub enum Strand {
+    Plus = 0,
+    Minus = 1,
+}
+
+/// A transcription start site (TSS) coordinate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
+pub struct Tss {
+    /// Chromosome/contig name
+    pub chrom: String,
+    /// 1-based position (start for + strand, end for - strand)
+    pub pos: u64,
+    /// Strand of the originating transcript
+    pub strand: Strand,
+}
+
+/// Extract deduplicated TSS coordinates from a GTF file.
+///
+/// Calls [`parse_gtf`] and iterates `gene.transcripts` to collect TSS
+/// coordinates. For `+` strand transcripts the TSS is the transcript start
+/// (1-based); for `-` strand transcripts the TSS is the transcript end
+/// (1-based). Transcripts with unknown strand (`'.'`) are skipped.
+/// The result is deduplicated via a `HashSet` and sorted by chromosome, then
+/// position, then strand.
+#[allow(dead_code)]
+pub fn extract_tss(path: &std::path::Path) -> Result<Vec<Tss>> {
+    let path_str = path.to_str().unwrap_or("");
+    let genes = parse_gtf(path_str, &[])?;
+    let mut set: std::collections::HashSet<Tss> = std::collections::HashSet::new();
+    for gene in genes.values() {
+        for tx in &gene.transcripts {
+            let strand = match tx.strand {
+                '+' => Strand::Plus,
+                '-' => Strand::Minus,
+                _ => continue,
+            };
+            let pos = match strand {
+                Strand::Plus => tx.start,
+                Strand::Minus => tx.end,
+            };
+            set.insert(Tss {
+                chrom: tx.chrom.clone(),
+                pos,
+                strand,
+            });
+        }
+    }
+    let mut v: Vec<Tss> = set.into_iter().collect();
+    v.sort_by(|a, b| {
+        a.chrom
+            .cmp(&b.chrom)
+            .then(a.pos.cmp(&b.pos))
+            .then((a.strand as u8).cmp(&(b.strand as u8)))
+    });
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,5 +818,28 @@ chr1\ttest\tstop_codon\t1500\t1502\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T1\
         let t1 = &genes["G1"].transcripts[0];
         assert_eq!(t1.cds_start, None);
         assert_eq!(t1.cds_end, None);
+    }
+
+    #[test]
+    fn tss_extraction_deduplicates() {
+        use std::io::Write as _;
+        // Two transcripts (t1, t2) share the same TSS (pos=100 on + strand); one
+        // - strand transcript (t3) has TSS at its end (pos=1500). Uses exon lines
+        // because parse_gtf only reads exon/CDS/start_codon/stop_codon features.
+        let gtf = "\
+chr1\ttest\texon\t100\t500\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t1\";\n\
+chr1\ttest\texon\t100\t600\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t2\";\n\
+chr1\ttest\texon\t900\t1500\t.\t-\t.\tgene_id \"g2\"; transcript_id \"t3\";\n";
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.as_file_mut().write_all(gtf.as_bytes()).unwrap();
+        let tss = extract_tss(tmp.path()).unwrap();
+        // + strand TSS = start (100); - strand TSS = end (1500). After dedup: 2 entries.
+        assert_eq!(tss.len(), 2);
+        assert!(tss
+            .iter()
+            .any(|t| t.chrom == "chr1" && t.pos == 100 && t.strand == Strand::Plus));
+        assert!(tss
+            .iter()
+            .any(|t| t.chrom == "chr1" && t.pos == 1500 && t.strand == Strand::Minus));
     }
 }

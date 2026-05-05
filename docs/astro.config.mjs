@@ -72,6 +72,14 @@ export default defineConfig({
           ],
         },
         {
+          label: "ATAC",
+          items: [
+            { label: "Overview", slug: "atac/index" },
+            { label: "CLI Reference", slug: "atac/cli" },
+            { label: "Numerical Fidelity", slug: "atac/numerical-fidelity" },
+          ],
+        },
+        {
           label: "About",
           items: [
             {

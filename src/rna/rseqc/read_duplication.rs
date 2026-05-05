@@ -156,7 +156,7 @@ fn write_r_script(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rna::bam_io::{self as bam, CigarKind};
+    use crate::bam_io::{self as bam, CigarKind};
     use log::debug;
     use std::collections::HashMap;
     use std::time::Instant;
