@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [Version 0.4.0](https://github.com/AI4S-YB/RustQC/releases/tag/v0.4.0) - 2026-05-05
+
 ### Added
 
 - `rustqc atac` subcommand for single-pass ATAC-seq QC, replicating
@@ -16,7 +18,7 @@
   (`src/bam_flags.rs`, `src/bam_io.rs`, `src/cpp_rng.rs`, `src/preseq.rs`).
   No behavior change to existing `rustqc rna` outputs.
 
-### TODO
+### Known gaps
 
 - Factor-footprinting metrics (`factorFootprints`, `vPlot`, etc.) —
   requires BSgenome / PWM motif DBs.
