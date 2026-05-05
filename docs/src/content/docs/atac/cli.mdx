@@ -1,0 +1,82 @@
+---
+title: CLI Reference
+description: Command-line interface reference for rustqc atac.
+---
+
+## Synopsis
+
+```
+rustqc atac [OPTIONS] --gtf <GTF> <INPUT>...
+```
+
+`<INPUT>` is one or more paired-end BAM/SAM/CRAM files. Single-end inputs are
+rejected at startup.
+
+## Full help output
+
+```
+ATAC-Seq QC — single-pass analysis of paired-end BAM/SAM/CRAM files.
+
+Runs bamQC, fragSizeDist, TSSEscore, NFRscore, PTscore, and library complexity
+in one pass. Requires a GTF annotation and paired-end input. Optionally emits
+Tn5-shifted and length-split BAMs.
+```
+
+## Options
+
+### Input / Output
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `-g, --gtf <GTF>` | `RUSTQC_GTF` | — | GTF gene annotation (plain or `.gz`); TSS coords source |
+| `-r, --reference <FASTA>` | `RUSTQC_REFERENCE` | — | Reference FASTA (required for CRAM) |
+| `-o, --outdir <OUTDIR>` | `RUSTQC_OUTDIR` | `.` | Output directory |
+| `--sample-name <NAME>` | `RUSTQC_SAMPLE_NAME` | derived from filename | Override sample name |
+| `--flat-output` | `RUSTQC_FLAT_OUTPUT` | false | Write outputs to a flat directory (no subdirs) |
+| `-c, --config <CONFIG>` | — | — | YAML configuration file |
+| `-j, --json-summary [<PATH>]` | `RUSTQC_JSON_SUMMARY` | — | JSON summary path (use `-` for stdout) |
+
+### ATAC-specific
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--mito-chrom <NAME>` | `RUSTQC_MITO_CHROM` | auto-detect `^chrM$\|^MT$\|^Mito$` | Mitochondrial chromosome name |
+| `--emit-shifted-bam` | `RUSTQC_EMIT_SHIFTED_BAM` | false | Emit +4/−5 Tn5-shifted BAM |
+| `--emit-split-bams` | `RUSTQC_EMIT_SPLIT_BAMS` | false | Emit NFR/mono/di/tri BAMs (fixed intervals) |
+| `--tsse-flank <N>` | `RUSTQC_TSSE_FLANK` | `1000` | TSSEscore flank (bp) |
+
+### General
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `-t, --threads <THREADS>` | `RUSTQC_THREADS` | `1` | Number of threads |
+| `-Q, --mapq <MAPQ_CUT>` | `RUSTQC_MAPQ` | `30` | MAPQ cutoff |
+| `-q, --quiet` | `RUSTQC_QUIET` | false | Suppress output except warnings/errors |
+| `-v, --verbose` | — | false | Show additional detail |
+
+## Examples
+
+```bash
+# Basic run
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/
+
+# With Tn5 shift + length-split BAMs (Phase 14 reserved — not yet wired to disk)
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/ \
+    --emit-shifted-bam --emit-split-bams
+
+# Custom mito chromosome name
+rustqc atac sample.markdup.bam --gtf genes.gtf --mito-chrom Mito --outdir results/
+
+# With sample-name override and JSON summary to stdout
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/ \
+    --sample-name MyExperiment -j -
+```
+
+## Notes on `--emit-shifted-bam` / `--emit-split-bams`
+
+These flags are accepted by the CLI and the Tn5 shift / fixed-interval split
+logic runs in memory, but **file writing is reserved for a follow-up release**.
+The internal `EmitWriters::open` function is a stub in this version — the
+shifted/split BAMs are not written to disk. The flags are present so pipeline
+configurations can be written now and the output will appear automatically when
+file writing is wired up.

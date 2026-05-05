@@ -326,7 +326,7 @@ pub fn write_bam_stat(result: &BamStatResult, output_path: &Path) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use crate::rna::bam_io as bam;
+    use crate::bam_io as bam;
     use crate::rna::rseqc::accumulators::BamStatAccum;
     use std::path::Path;
 

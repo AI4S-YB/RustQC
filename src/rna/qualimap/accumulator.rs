@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::rna::bam_io::{self as bam, CigarKind};
+use crate::bam_io::{self as bam, CigarKind};
 use coitrees::IntervalTree;
 
 use crate::cli::Strandedness;
@@ -37,7 +37,7 @@ struct CachedBlockHits {
     has_overlap_not_enclosed: bool,
 }
 
-use crate::rna::bam_flags::*;
+use crate::bam_flags::*;
 
 // ============================================================
 // Mate buffer for PE reads
