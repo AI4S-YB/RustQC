@@ -465,6 +465,12 @@ pub fn run(args: AtacArgs) -> Result<()> {
             atacseqqc_replicates: "1.36.0".to_string(),
         },
         split_method: "fixed_intervals_v1",
+        tn5_shift: summary::Tn5ShiftSection {
+            requested: cfg.tn5_shift == Tn5Shift::Yes,
+            input_is_shifted: cfg.input_is_shifted,
+            applied: cfg.apply_tn5_shift(),
+            tss_dependent_metrics_enabled: cfg.tss_dependent_metrics_enabled(),
+        },
         bamqc: {
             let mut mapq_histogram = serde_json::Map::new();
             for (k, v) in &bq_report.mapq_hist {
@@ -488,22 +494,22 @@ pub fn run(args: AtacArgs) -> Result<()> {
             total_pairs: frag_rows.iter().map(|(_, c, _)| c).sum(),
             tsv_path: fragsize_tsv_path,
         },
-        tsse: summary::TsseSection {
+        tsse: Some(summary::TsseSection {
             score: tsse_result.tsse_score,
             n_windows: tsse_result.values.len() as u32,
             values: tsse_result.values.clone(),
             tsv_path: tsse_tsv_path,
-        },
-        nfr: summary::ScoreSection {
+        }),
+        nfr: Some(summary::ScoreSection {
             n_tss: nfr_rows.len() as u32,
             median_score: nfr_median,
             tsv_path: nfr_tsv_path,
-        },
-        pt: summary::ScoreSection {
+        }),
+        pt: Some(summary::ScoreSection {
             n_tss: pt_rows.len() as u32,
             median_score: pt_median,
             tsv_path: pt_tsv_path,
-        },
+        }),
         lib_complexity: summary::LibComplexitySection {
             n_rows: lib_rows.len() as u32,
             extrapolated_total,

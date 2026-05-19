@@ -17,11 +17,12 @@ pub struct AtacSummary {
     pub tool_versions: ToolVersions,
     /// Always `"fixed_intervals_v1"` per spec.
     pub split_method: &'static str,
+    pub tn5_shift: Tn5ShiftSection,
     pub bamqc: BamqcSection,
     pub fragsize: FragsizeSection,
-    pub tsse: TsseSection,
-    pub nfr: ScoreSection,
-    pub pt: ScoreSection,
+    pub tsse: Option<TsseSection>,
+    pub nfr: Option<ScoreSection>,
+    pub pt: Option<ScoreSection>,
     pub lib_complexity: LibComplexitySection,
 }
 
@@ -33,6 +34,14 @@ pub struct AtacSummary {
 pub struct ToolVersions {
     pub rustqc: String,
     pub atacseqqc_replicates: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tn5ShiftSection {
+    pub requested: bool,
+    pub input_is_shifted: bool,
+    pub applied: bool,
+    pub tss_dependent_metrics_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,6 +123,12 @@ mod tests {
                 atacseqqc_replicates: "1.36.0".to_string(),
             },
             split_method: "fixed_intervals_v1",
+            tn5_shift: Tn5ShiftSection {
+                requested: true,
+                input_is_shifted: false,
+                applied: true,
+                tss_dependent_metrics_enabled: true,
+            },
             bamqc: BamqcSection {
                 total_qnames: 1000,
                 duplicate_rate: 0.05,
@@ -131,22 +146,22 @@ mod tests {
                 total_pairs: 800,
                 tsv_path: "fragsize/test_sample.fragsize.tsv".to_string(),
             },
-            tsse: TsseSection {
+            tsse: Some(TsseSection {
                 score: 7.5,
                 n_windows: 20,
                 values: vec![1.0; 20],
                 tsv_path: "tsse/test_sample.tsse.tsv".to_string(),
-            },
-            nfr: ScoreSection {
+            }),
+            nfr: Some(ScoreSection {
                 n_tss: 10,
                 median_score: 0.5,
                 tsv_path: "nfr/test_sample.nfr.tsv".to_string(),
-            },
-            pt: ScoreSection {
+            }),
+            pt: Some(ScoreSection {
                 n_tss: 10,
                 median_score: 1.2,
                 tsv_path: "pt/test_sample.pt.tsv".to_string(),
-            },
+            }),
             lib_complexity: LibComplexitySection {
                 n_rows: 14,
                 extrapolated_total: Some(750.0),
@@ -163,6 +178,7 @@ mod tests {
             "sample",
             "tool_versions",
             "split_method",
+            "tn5_shift",
             "bamqc",
             "fragsize",
             "tsse",
@@ -203,6 +219,17 @@ mod tests {
         // Assert split_method value.
         assert_eq!(j["split_method"].as_str().unwrap(), "fixed_intervals_v1");
 
+        // Assert tn5_shift fields.
+        assert_eq!(j["tn5_shift"]["requested"].as_bool().unwrap(), true);
+        assert_eq!(j["tn5_shift"]["input_is_shifted"].as_bool().unwrap(), false);
+        assert_eq!(j["tn5_shift"]["applied"].as_bool().unwrap(), true);
+        assert_eq!(
+            j["tn5_shift"]["tss_dependent_metrics_enabled"]
+                .as_bool()
+                .unwrap(),
+            true
+        );
+
         // Assert tsse.values is a 20-element array.
         assert_eq!(j["tsse"]["values"].as_array().unwrap().len(), 20);
 
@@ -228,6 +255,63 @@ mod tests {
         assert!(
             j["lib_complexity"].get("extrapolated_total").is_some(),
             "lib_complexity missing extrapolated_total"
+        );
+    }
+
+    #[test]
+    fn schema_serializes_skipped_tss_metrics_as_null() {
+        let s = AtacSummary {
+            schema_version: "1.0".to_string(),
+            sample: "test_sample".to_string(),
+            tool_versions: ToolVersions {
+                rustqc: "0.3.0".to_string(),
+                atacseqqc_replicates: "1.36.0".to_string(),
+            },
+            split_method: "fixed_intervals_v1",
+            tn5_shift: Tn5ShiftSection {
+                requested: false,
+                input_is_shifted: false,
+                applied: false,
+                tss_dependent_metrics_enabled: false,
+            },
+            bamqc: BamqcSection {
+                total_qnames: 1000,
+                duplicate_rate: 0.05,
+                mitochondria_rate: 0.02,
+                proper_pair_rate: 0.95,
+                unmapped_rate: 0.01,
+                has_unmapped_mate_rate: 0.02,
+                not_passing_qc_rate: 0.005,
+                nrf: 0.8,
+                pbc1: 0.9,
+                pbc2: 3.5,
+                mapq_histogram: serde_json::Map::new(),
+            },
+            fragsize: FragsizeSection {
+                total_pairs: 800,
+                tsv_path: "fragsize/test_sample.fragsize.tsv".to_string(),
+            },
+            tsse: None,
+            nfr: None,
+            pt: None,
+            lib_complexity: LibComplexitySection {
+                n_rows: 14,
+                extrapolated_total: Some(750.0),
+                tsv_path: "lib_complexity/test_sample.libcomplexity.tsv".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&s).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(v["tsse"].is_null());
+        assert!(v["nfr"].is_null());
+        assert!(v["pt"].is_null());
+        assert_eq!(
+            v["tn5_shift"]["tss_dependent_metrics_enabled"]
+                .as_bool()
+                .unwrap(),
+            false
         );
     }
 }
