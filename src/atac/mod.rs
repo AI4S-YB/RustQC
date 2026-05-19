@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 
 use crate::bam_io;
 use crate::cli::AtacArgs;
+use crate::cli::Tn5Shift;
 use crate::config::AtacConfig;
 
 use bam_qc::{BamQcAccum, PbcChromAccum};
@@ -59,6 +60,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
     let atac_cfg = full_cfg.atac;
 
     let cfg = resolve(&args, &atac_cfg);
+    cfg.validate_shift_state()?;
 
     // Validate: Phase 13 supports exactly one BAM input.
     if cfg.inputs.len() != 1 {
@@ -549,6 +551,8 @@ pub struct ResolvedAtacConfig {
     pub json_summary: Option<String>,
     pub mito_chrom: Option<String>, // None ⇒ auto-detect at runtime
     pub tsse_flank: u32,
+    pub tn5_shift: Tn5Shift,
+    pub input_is_shifted: bool,
     pub emit_shifted_bam: bool,
     pub emit_split_bams: bool,
     /// Reserved: rayon worker count for the streaming driver (Phase N+1).
@@ -564,6 +568,32 @@ pub struct ResolvedAtacConfig {
     /// Reserved for future logging verbosity control.
     #[allow(dead_code)]
     pub verbose: bool,
+}
+
+impl ResolvedAtacConfig {
+    /// Return true when RustQC should apply Tn5 +4/-5 shift in memory.
+    #[allow(dead_code)] // Wired into BAM processing by the next ATAC Tn5 shift task.
+    pub fn apply_tn5_shift(&self) -> bool {
+        self.tn5_shift == Tn5Shift::Yes && !self.input_is_shifted
+    }
+
+    /// Return true when TSSE/NFR/PT can be computed from insertion-site coordinates.
+    #[allow(dead_code)] // Wired into BAM processing by the next ATAC Tn5 shift task.
+    pub fn tss_dependent_metrics_enabled(&self) -> bool {
+        self.apply_tn5_shift() || self.input_is_shifted
+    }
+
+    /// Reject contradictory Tn5 shift settings before any BAM work starts.
+    pub fn validate_shift_state(&self) -> Result<()> {
+        if self.tn5_shift == Tn5Shift::Yes && self.input_is_shifted {
+            anyhow::bail!(
+                "--tn5-shift yes cannot be combined with --input-is-shifted; \
+                 use --tn5-shift no --input-is-shifted for already shifted input, \
+                 or omit --input-is-shifted for ordinary unshifted ATAC BAMs"
+            );
+        }
+        Ok(())
+    }
 }
 
 const DEFAULT_TSSE_FLANK: u32 = 1000;
@@ -594,6 +624,14 @@ pub fn resolve(args: &AtacArgs, atac_cfg: &AtacConfig) -> ResolvedAtacConfig {
             .tsse_flank
             .or(atac_cfg.tsse_flank)
             .unwrap_or(DEFAULT_TSSE_FLANK),
+        tn5_shift: args
+            .tn5_shift
+            .or(atac_cfg.tn5_shift)
+            .unwrap_or(Tn5Shift::Yes),
+        input_is_shifted: args
+            .input_is_shifted
+            .or(atac_cfg.input_is_shifted)
+            .unwrap_or(false),
         emit_shifted_bam: args.emit_shifted_bam || atac_cfg.emit_shifted_bam,
         emit_split_bams: args.emit_split_bams || atac_cfg.emit_split_bams,
         threads: args.threads,
@@ -659,6 +697,114 @@ mod tests {
         assert_eq!(r.mapq_cut, 30);
         assert!(!r.emit_shifted_bam);
         assert!(r.mito_chrom.is_none());
+    }
+
+    #[test]
+    fn resolve_shift_defaults_to_yes_unshifted() {
+        let r = resolve(
+            &parse(&["rustqc", "atac", "x.bam", "--gtf", "g.gtf"]),
+            &AtacConfig::default(),
+        );
+        assert_eq!(r.tn5_shift, Tn5Shift::Yes);
+        assert!(!r.input_is_shifted);
+        assert!(r.apply_tn5_shift());
+        assert!(r.tss_dependent_metrics_enabled());
+        assert!(r.validate_shift_state().is_ok());
+    }
+
+    #[test]
+    fn resolve_shift_no_unshifted_disables_tss_metrics() {
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--tn5-shift",
+                "no",
+            ]),
+            &AtacConfig::default(),
+        );
+        assert_eq!(r.tn5_shift, Tn5Shift::No);
+        assert!(!r.input_is_shifted);
+        assert!(!r.apply_tn5_shift());
+        assert!(!r.tss_dependent_metrics_enabled());
+        assert!(r.validate_shift_state().is_ok());
+    }
+
+    #[test]
+    fn resolve_shift_no_input_shifted_keeps_tss_metrics() {
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--tn5-shift",
+                "no",
+                "--input-is-shifted",
+            ]),
+            &AtacConfig::default(),
+        );
+        assert_eq!(r.tn5_shift, Tn5Shift::No);
+        assert!(r.input_is_shifted);
+        assert!(!r.apply_tn5_shift());
+        assert!(r.tss_dependent_metrics_enabled());
+        assert!(r.validate_shift_state().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_shift_yes_with_input_shifted() {
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--tn5-shift",
+                "yes",
+                "--input-is-shifted",
+            ]),
+            &AtacConfig::default(),
+        );
+        let err = r
+            .validate_shift_state()
+            .expect_err("contradictory Tn5 shift settings should fail")
+            .to_string();
+        assert!(err.contains("--tn5-shift yes"));
+        assert!(err.contains("--input-is-shifted"));
+    }
+
+    #[test]
+    fn resolve_cli_shift_overrides_yaml() {
+        let atac_cfg = AtacConfig {
+            mito_chrom: None,
+            tn5_shift: Some(Tn5Shift::No),
+            input_is_shifted: None,
+            tsse_flank: None,
+            emit_shifted_bam: false,
+            emit_split_bams: false,
+        };
+        let r = resolve(
+            &parse(&[
+                "rustqc",
+                "atac",
+                "x.bam",
+                "--gtf",
+                "g.gtf",
+                "--tn5-shift",
+                "yes",
+            ]),
+            &atac_cfg,
+        );
+        assert_eq!(r.tn5_shift, Tn5Shift::Yes);
+        assert!(!r.input_is_shifted);
+        assert!(r.apply_tn5_shift());
+        assert!(r.tss_dependent_metrics_enabled());
+        assert!(r.validate_shift_state().is_ok());
     }
 
     #[test]
