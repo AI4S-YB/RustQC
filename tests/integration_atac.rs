@@ -241,9 +241,9 @@ fn tn5_shift_no_unshifted_input_writes_basic_qc_only() {
         summary["tn5_shift"]["tss_dependent_metrics_enabled"].as_bool(),
         Some(false)
     );
-    assert!(summary["tsse"].is_null(), "tsse summary should be null");
-    assert!(summary["nfr"].is_null(), "nfr summary should be null");
-    assert!(summary["pt"].is_null(), "pt summary should be null");
+    assert!(summary.get("tsse").is_some_and(serde_json::Value::is_null));
+    assert!(summary.get("nfr").is_some_and(serde_json::Value::is_null));
+    assert!(summary.get("pt").is_some_and(serde_json::Value::is_null));
 }
 
 #[test]
