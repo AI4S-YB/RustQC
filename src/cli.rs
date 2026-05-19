@@ -39,6 +39,26 @@ impl std::fmt::Display for Strandedness {
     }
 }
 
+/// Whether RustQC should apply the ATAC Tn5 +4/-5 shift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tn5Shift {
+    /// Apply Tn5 +4/-5 shift before ATAC QC analyses.
+    #[default]
+    Yes,
+    /// Treat input coordinates as already suitable for ATAC QC analyses.
+    No,
+}
+
+impl std::fmt::Display for Tn5Shift {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tn5Shift::Yes => write!(f, "yes"),
+            Tn5Shift::No => write!(f, "no"),
+        }
+    }
+}
+
 /// Fast quality control tools for sequencing data, written in Rust.
 #[derive(Parser, Debug)]
 #[command(name = "rustqc", version, about, long_about = None)]
@@ -486,6 +506,28 @@ pub struct AtacArgs {
     )]
     pub mito_chrom: Option<String>,
 
+    /// Apply Tn5 +4/-5 shift before ATAC QC analyses
+    #[arg(
+        long,
+        value_name = "yes|no",
+        value_enum,
+        env = "RUSTQC_TN5_SHIFT",
+        help_heading = "ATAC-specific"
+    )]
+    pub tn5_shift: Option<Tn5Shift>,
+
+    /// Input alignments are already Tn5-shifted
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(bool),
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        env = "RUSTQC_INPUT_IS_SHIFTED",
+        help_heading = "ATAC-specific"
+    )]
+    pub input_is_shifted: Option<bool>,
+
     /// Emit +4/-5 Tn5-shifted BAM (reserved; file writing not yet implemented)
     #[arg(
         long,
@@ -793,6 +835,8 @@ mod tests {
                 assert!(!args.emit_shifted_bam);
                 assert!(!args.emit_split_bams);
                 assert_eq!(args.mito_chrom, None);
+                assert_eq!(args.tn5_shift, None);
+                assert_eq!(args.input_is_shifted, None);
                 assert_eq!(args.tsse_flank, None);
             }
             #[allow(unreachable_patterns)]
@@ -821,6 +865,47 @@ mod tests {
                 assert!(args.emit_split_bams);
                 assert_eq!(args.mito_chrom.as_deref(), Some("MT"));
                 assert_eq!(args.tsse_flank, Some(2000));
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Expected Atac subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_atac_tn5_shift_flags() {
+        let cli = Cli::parse_from([
+            "rustqc",
+            "atac",
+            "test.bam",
+            "--gtf",
+            "genes.gtf",
+            "--tn5-shift",
+            "no",
+            "--input-is-shifted",
+        ]);
+        match cli.command {
+            Commands::Atac(args) => {
+                assert_eq!(args.tn5_shift, Some(Tn5Shift::No));
+                assert_eq!(args.input_is_shifted, Some(true));
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Expected Atac subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_atac_input_is_shifted_accepts_explicit_false() {
+        let cli = Cli::parse_from([
+            "rustqc",
+            "atac",
+            "test.bam",
+            "--gtf",
+            "genes.gtf",
+            "--input-is-shifted=false",
+        ]);
+        match cli.command {
+            Commands::Atac(args) => {
+                assert_eq!(args.input_is_shifted, Some(false));
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Expected Atac subcommand"),

@@ -4,7 +4,7 @@
 //! like chromosome name mappings between alignment file and GTF references,
 //! per-tool output configuration, and tool enable/disable toggles.
 
-use crate::cli::Strandedness;
+use crate::cli::{Strandedness, Tn5Shift};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_yaml_ng::Value;
@@ -42,6 +42,10 @@ pub struct Config {
 pub struct AtacConfig {
     /// Mitochondrial chromosome name; auto-detected when None.
     pub mito_chrom: Option<String>,
+    /// Whether to apply the ATAC Tn5 +4/-5 shift.
+    pub tn5_shift: Option<Tn5Shift>,
+    /// Whether input alignments are already Tn5-shifted.
+    pub input_is_shifted: Option<bool>,
     /// TSSEscore flank window in bp (default 1000).
     pub tsse_flank: Option<u32>,
     /// Emit Tn5-shifted BAM.
@@ -968,6 +972,18 @@ future_subcommand:
 "#;
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(config.rna.chromosome_prefix, Some("chr".to_string()));
+    }
+
+    #[test]
+    fn test_atac_shift_config() {
+        let yaml = r#"
+atac:
+  tn5_shift: no
+  input_is_shifted: true
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.atac.tn5_shift, Some(crate::cli::Tn5Shift::No));
+        assert_eq!(config.atac.input_is_shifted, Some(true));
     }
 
     // --- Tests for RnaConfig (inner struct) ---

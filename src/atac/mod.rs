@@ -685,6 +685,8 @@ mod tests {
     fn resolve_yaml_config_overrides_default_when_cli_absent() {
         let atac_cfg = AtacConfig {
             mito_chrom: Some("XYZ".into()),
+            tn5_shift: None,
+            input_is_shifted: None,
             tsse_flank: Some(2500),
             emit_shifted_bam: true,
             emit_split_bams: false,
@@ -702,6 +704,8 @@ mod tests {
     fn resolve_cli_args_override_yaml() {
         let atac_cfg = AtacConfig {
             mito_chrom: Some("XYZ".into()),
+            tn5_shift: None,
+            input_is_shifted: None,
             tsse_flank: Some(2500),
             emit_shifted_bam: true,
             emit_split_bams: false,
