@@ -50,6 +50,18 @@ fn metric_path(outdir: &str, flat: bool, subdir: &str, filename: &str) -> PathBu
     }
 }
 
+/// Return the 1-based 5' position to accumulate for TSS-dependent metrics.
+fn tss_position_for_coverage(pos5p: u64, is_reverse: bool, apply_tn5_shift: bool) -> Option<u64> {
+    if !apply_tn5_shift {
+        return Some(pos5p);
+    }
+    if is_reverse {
+        pos5p.checked_sub(5)
+    } else {
+        Some(pos5p + 4)
+    }
+}
+
 /// Entry point for the `rustqc atac` subcommand.
 ///
 /// Loads the merged YAML config (XDG system → user → env → -c flag), extracts
@@ -86,23 +98,28 @@ pub fn run(args: AtacArgs) -> Result<()> {
 
     eprintln!("[rustqc atac] sample: {}", sample);
 
-    // Load TSS list from GTF.
-    let tss_list = crate::gtf::extract_tss(Path::new(&cfg.gtf))
-        .with_context(|| format!("failed to parse GTF: {}", cfg.gtf))?;
-    if tss_list.is_empty() {
-        eprintln!(
-            "[rustqc atac] WARNING: no TSS entries extracted from GTF — TSS metrics will be empty"
-        );
+    let tss_metrics_enabled = cfg.tss_dependent_metrics_enabled();
+    let mut tss_cov = if tss_metrics_enabled {
+        let tss_list = crate::gtf::extract_tss(Path::new(&cfg.gtf))
+            .with_context(|| format!("failed to parse GTF: {}", cfg.gtf))?;
+        if tss_list.is_empty() {
+            eprintln!(
+                "[rustqc atac] WARNING: no TSS entries extracted from GTF — TSS metrics will be empty"
+            );
+        } else {
+            eprintln!(
+                "[rustqc atac] loaded {} TSS entries from GTF",
+                tss_list.len()
+            );
+        }
+        let flank = resolve_flank(cfg.tsse_flank);
+        Some(TssCov::new(tss_list, flank))
     } else {
         eprintln!(
-            "[rustqc atac] loaded {} TSS entries from GTF",
-            tss_list.len()
+            "[rustqc atac] TSS-dependent metrics disabled because --tn5-shift no was used without --input-is-shifted"
         );
-    }
-
-    // Resolve flank.
-    let flank = resolve_flank(cfg.tsse_flank);
-    let mut tss_cov = TssCov::new(tss_list, flank);
+        None
+    };
 
     // Open BAM.
     let (mut reader, header) =
@@ -175,7 +192,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
             frag.update(tlen);
         }
 
-        // 5'-end position for TssCov, with Tn5 +4/-5 shift applied.
+        // 5'-end position for TssCov, with optional Tn5 +4/-5 shift applied.
         //
         // Match ATACseqQC's `shiftGAlignmentsList` filter set, which feeds the
         // shifted reads into NFRscore/PTscore/TSSEscore:
@@ -196,13 +213,11 @@ pub fn run(args: AtacArgs) -> Result<()> {
             } else {
                 (pos0 + 1) as u64
             };
-            let pos5p_shifted = if is_reverse {
-                pos5p.checked_sub(5)
-            } else {
-                Some(pos5p + 4)
-            };
-            if let Some(p) = pos5p_shifted {
-                tss_cov.add_5prime(chrom_name, p);
+            if let Some(tss_cov) = tss_cov.as_mut() {
+                if let Some(p) = tss_position_for_coverage(pos5p, is_reverse, cfg.apply_tn5_shift())
+                {
+                    tss_cov.add_5prime(chrom_name, p);
+                }
             }
         }
 
@@ -240,17 +255,18 @@ pub fn run(args: AtacArgs) -> Result<()> {
 
     // ── Finalize metrics ──────────────────────────────────────────────────────
     let bq_report = bam_qc::finalize(&bq, &pbc);
-    let tsse_result = tsse::compute(&tss_cov);
-    let nfr_rows = nfr_score::compute(&tss_cov);
-    let pt_rows = pt_score::compute(&tss_cov);
+    let tss_metric_results = tss_cov.as_ref().map(|cov| {
+        let tsse_result = tsse::compute(cov);
+        let nfr_rows = nfr_score::compute(cov);
+        let pt_rows = pt_score::compute(cov);
+        let nfr_median = median(nfr_rows.iter().map(|r| r.nfr_score).collect());
+        let pt_median = median(pt_rows.iter().map(|r| r.pt_score).collect());
+        (tsse_result, nfr_rows, pt_rows, nfr_median, pt_median)
+    });
     let frag_rows = frag.finalize();
     let dup_hist = dup.histogram();
     let lib_rows =
         lib_complexity::estimate(&dup_hist, 100).context("library complexity estimation failed")?;
-
-    // Compute median NFR/PT scores for JSON summary.
-    let nfr_median = median(nfr_rows.iter().map(|r| r.nfr_score).collect());
-    let pt_median = median(pt_rows.iter().map(|r| r.pt_score).collect());
 
     // ── Create output directories ─────────────────────────────────────────────
     let outdir = &cfg.outdir;
@@ -269,9 +285,11 @@ pub fn run(args: AtacArgs) -> Result<()> {
     fs::create_dir_all(outdir).with_context(|| format!("create_dir_all {}", outdir))?;
     mk("bamqc")?;
     mk("fragsize")?;
-    mk("tsse")?;
-    mk("nfr")?;
-    mk("pt")?;
+    if tss_metric_results.is_some() {
+        mk("tsse")?;
+        mk("nfr")?;
+        mk("pt")?;
+    }
     mk("lib_complexity")?;
 
     // ── Write bamQC TSV ───────────────────────────────────────────────────────
@@ -326,7 +344,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
     }
 
     // ── Write TSSE TSV ────────────────────────────────────────────────────────
-    {
+    if let Some((tsse_result, _, _, _, _)) = &tss_metric_results {
         let p = metric_path(outdir, flat, "tsse", &format!("{}.tsse.tsv", sample));
         let mut w =
             BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
@@ -338,13 +356,13 @@ pub fn run(args: AtacArgs) -> Result<()> {
     }
 
     // ── Write NFR TSV ─────────────────────────────────────────────────────────
-    {
+    if let Some((_, nfr_rows, _, _, _)) = &tss_metric_results {
         let p = metric_path(outdir, flat, "nfr", &format!("{}.nfr.tsv", sample));
         let mut w =
             BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "tss_idx\tn1\tnf\tn2\tnfr_score\tlog2meancov")?;
-        for r in &nfr_rows {
+        for r in nfr_rows {
             writeln!(
                 w,
                 "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
@@ -354,13 +372,13 @@ pub fn run(args: AtacArgs) -> Result<()> {
     }
 
     // ── Write PT TSV ──────────────────────────────────────────────────────────
-    {
+    if let Some((_, _, pt_rows, _, _)) = &tss_metric_results {
         let p = metric_path(outdir, flat, "pt", &format!("{}.pt.tsv", sample));
         let mut w =
             BufWriter::new(File::create(&p).with_context(|| format!("create {}", p.display()))?);
         use std::io::Write as _;
         writeln!(w, "tss_idx\tpromoter\tbody\tpt_score\tlog2meancov")?;
-        for r in &pt_rows {
+        for r in pt_rows {
             writeln!(
                 w,
                 "{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
@@ -401,7 +419,7 @@ pub fn run(args: AtacArgs) -> Result<()> {
         plots::fragsize_svg(&frag_rows, &p, &sample)
             .with_context(|| format!("fragsize SVG: {}", p.display()))?;
     }
-    {
+    if let Some((tsse_result, _, _, _, _)) = &tss_metric_results {
         let p = metric_path(outdir, flat, "tsse", &format!("{}.tsse.svg", sample));
         plots::tsse_svg(&tsse_result.values, &p, &sample)
             .with_context(|| format!("TSSE SVG: {}", p.display()))?;
@@ -424,21 +442,27 @@ pub fn run(args: AtacArgs) -> Result<()> {
     } else {
         format!("fragsize/{}.fragsize.tsv", sample)
     };
-    let tsse_tsv_path = if flat {
-        format!("{}.tsse.tsv", sample)
-    } else {
-        format!("tsse/{}.tsse.tsv", sample)
-    };
-    let nfr_tsv_path = if flat {
-        format!("{}.nfr.tsv", sample)
-    } else {
-        format!("nfr/{}.nfr.tsv", sample)
-    };
-    let pt_tsv_path = if flat {
-        format!("{}.pt.tsv", sample)
-    } else {
-        format!("pt/{}.pt.tsv", sample)
-    };
+    let tsse_tsv_path = tss_metric_results.as_ref().map(|_| {
+        if flat {
+            format!("{}.tsse.tsv", sample)
+        } else {
+            format!("tsse/{}.tsse.tsv", sample)
+        }
+    });
+    let nfr_tsv_path = tss_metric_results.as_ref().map(|_| {
+        if flat {
+            format!("{}.nfr.tsv", sample)
+        } else {
+            format!("nfr/{}.nfr.tsv", sample)
+        }
+    });
+    let pt_tsv_path = tss_metric_results.as_ref().map(|_| {
+        if flat {
+            format!("{}.pt.tsv", sample)
+        } else {
+            format!("pt/{}.pt.tsv", sample)
+        }
+    });
     let libcomplexity_tsv_path = if flat {
         format!("{}.libcomplexity.tsv", sample)
     } else {
@@ -494,22 +518,33 @@ pub fn run(args: AtacArgs) -> Result<()> {
             total_pairs: frag_rows.iter().map(|(_, c, _)| c).sum(),
             tsv_path: fragsize_tsv_path,
         },
-        tsse: Some(summary::TsseSection {
-            score: tsse_result.tsse_score,
-            n_windows: tsse_result.values.len() as u32,
-            values: tsse_result.values.clone(),
-            tsv_path: tsse_tsv_path,
-        }),
-        nfr: Some(summary::ScoreSection {
-            n_tss: nfr_rows.len() as u32,
-            median_score: nfr_median,
-            tsv_path: nfr_tsv_path,
-        }),
-        pt: Some(summary::ScoreSection {
-            n_tss: pt_rows.len() as u32,
-            median_score: pt_median,
-            tsv_path: pt_tsv_path,
-        }),
+        tsse: match (&tss_metric_results, &tsse_tsv_path) {
+            (Some((tsse_result, _, _, _, _)), Some(tsv_path)) => Some(summary::TsseSection {
+                score: tsse_result.tsse_score,
+                n_windows: tsse_result.values.len() as u32,
+                values: tsse_result.values.clone(),
+                tsv_path: tsv_path.clone(),
+            }),
+            _ => None,
+        },
+        nfr: match (&tss_metric_results, &nfr_tsv_path) {
+            (Some((_, nfr_rows, _, nfr_median, _)), Some(tsv_path)) => {
+                Some(summary::ScoreSection {
+                    n_tss: nfr_rows.len() as u32,
+                    median_score: *nfr_median,
+                    tsv_path: tsv_path.clone(),
+                })
+            }
+            _ => None,
+        },
+        pt: match (&tss_metric_results, &pt_tsv_path) {
+            (Some((_, _, pt_rows, _, pt_median)), Some(tsv_path)) => Some(summary::ScoreSection {
+                n_tss: pt_rows.len() as u32,
+                median_score: *pt_median,
+                tsv_path: tsv_path.clone(),
+            }),
+            _ => None,
+        },
         lib_complexity: summary::LibComplexitySection {
             n_rows: lib_rows.len() as u32,
             extrapolated_total,
@@ -690,6 +725,23 @@ mod tests {
     fn flank_floor_at_3000() {
         assert_eq!(resolve_flank(1000), 3000);
         assert_eq!(resolve_flank(5000), 5000);
+    }
+
+    #[test]
+    fn tss_position_shift_helper_applies_plus4_minus5() {
+        assert_eq!(tss_position_for_coverage(100, false, true), Some(104));
+        assert_eq!(tss_position_for_coverage(100, true, true), Some(95));
+    }
+
+    #[test]
+    fn tss_position_shift_helper_can_leave_input_unchanged() {
+        assert_eq!(tss_position_for_coverage(100, false, false), Some(100));
+        assert_eq!(tss_position_for_coverage(100, true, false), Some(100));
+    }
+
+    #[test]
+    fn tss_position_shift_helper_drops_underflowing_reverse_shift() {
+        assert_eq!(tss_position_for_coverage(3, true, true), None);
     }
 
     #[test]
