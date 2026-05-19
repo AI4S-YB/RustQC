@@ -177,6 +177,113 @@ fn rustqc_atac_runs_on_gl1_fixture() {
     assert_eq!(obj["sample"].as_str().unwrap(), "GL1");
 }
 
+#[test]
+fn tn5_shift_no_unshifted_input_writes_basic_qc_only() {
+    let outdir = tempfile::tempdir().unwrap();
+    let status = Command::new(env!("CARGO_BIN_EXE_rustqc"))
+        .args([
+            "atac",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/atac/GL1.bam"),
+            "--gtf",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/atac/GL_tss.gtf"),
+            "--outdir",
+            outdir.path().to_str().unwrap(),
+            "--sample-name",
+            "GL1",
+            "--tn5-shift",
+            "no",
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "rustqc atac exited non-zero: {:?}",
+        status
+    );
+
+    for sub in [
+        "bamqc/GL1.bamqc.tsv",
+        "bamqc/GL1.mapq.tsv",
+        "fragsize/GL1.fragsize.tsv",
+        "fragsize/GL1.fragsize.svg",
+        "lib_complexity/GL1.libcomplexity.tsv",
+        "lib_complexity/GL1.libcomplexity.svg",
+        "GL1.atac.summary.json",
+    ] {
+        assert!(
+            outdir.path().join(sub).exists(),
+            "missing output file: {}",
+            sub
+        );
+    }
+
+    for sub in [
+        "tsse/GL1.tsse.tsv",
+        "tsse/GL1.tsse.svg",
+        "nfr/GL1.nfr.tsv",
+        "pt/GL1.pt.tsv",
+    ] {
+        assert!(
+            !outdir.path().join(sub).exists(),
+            "unexpected TSS-dependent output file: {}",
+            sub
+        );
+    }
+
+    let summary = read_summary(&outdir, "GL1");
+    assert_eq!(summary["tn5_shift"]["requested"].as_bool(), Some(false));
+    assert_eq!(
+        summary["tn5_shift"]["input_is_shifted"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(summary["tn5_shift"]["applied"].as_bool(), Some(false));
+    assert_eq!(
+        summary["tn5_shift"]["tss_dependent_metrics_enabled"].as_bool(),
+        Some(false)
+    );
+    assert!(summary["tsse"].is_null(), "tsse summary should be null");
+    assert!(summary["nfr"].is_null(), "nfr summary should be null");
+    assert!(summary["pt"].is_null(), "pt summary should be null");
+}
+
+#[test]
+fn tn5_shift_yes_with_input_is_shifted_errors() {
+    let outdir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rustqc"))
+        .args([
+            "atac",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/atac/GL1.bam"),
+            "--gtf",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/atac/GL_tss.gtf"),
+            "--outdir",
+            outdir.path().to_str().unwrap(),
+            "--sample-name",
+            "GL1",
+            "--tn5-shift",
+            "yes",
+            "--input-is-shifted",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "rustqc atac unexpectedly succeeded: {:?}",
+        output.status
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--tn5-shift yes"),
+        "stderr did not mention --tn5-shift yes: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("--input-is-shifted"),
+        "stderr did not mention --input-is-shifted: {}",
+        stderr
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Phase 14 smoke helpers: verify metrics are present and finite
 // ---------------------------------------------------------------------------

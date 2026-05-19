@@ -41,6 +41,8 @@ Tn5-shifted and length-split BAMs.
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
 | `--mito-chrom <NAME>` | `RUSTQC_MITO_CHROM` | auto-detect `^chrM$\|^MT$\|^Mito$` | Mitochondrial chromosome name |
+| `--tn5-shift <yes\|no>` | `RUSTQC_TN5_SHIFT` | `yes` | Whether RustQC should apply +4/−5 Tn5 shift for insertion-site metrics |
+| `--input-is-shifted[=true\|false]` | `RUSTQC_INPUT_IS_SHIFTED` | false | Declare that input BAM coordinates are already Tn5 shifted |
 | `--emit-shifted-bam` | `RUSTQC_EMIT_SHIFTED_BAM` | false | Emit +4/−5 Tn5-shifted BAM |
 | `--emit-split-bams` | `RUSTQC_EMIT_SPLIT_BAMS` | false | Emit NFR/mono/di/tri BAMs (fixed intervals) |
 | `--tsse-flank <N>` | `RUSTQC_TSSE_FLANK` | `1000` | TSSEscore flank (bp) |
@@ -71,6 +73,23 @@ rustqc atac sample.markdup.bam --gtf genes.gtf --mito-chrom Mito --outdir result
 rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/ \
     --sample-name MyExperiment -j -
 ```
+
+## Tn5 shift semantics
+
+TSS-dependent metrics (`TSSEscore`, `NFRscore`, and `PTscore`) use Tn5 insertion-site coordinates.
+By default, `rustqc atac` assumes ordinary unshifted ATAC BAM input and applies +4/−5 shift in
+memory for those metrics.
+
+| `--tn5-shift` | `--input-is-shifted` | Behavior |
+|---------------|----------------------|----------|
+| `yes` | absent or `false` | Apply in-memory Tn5 shift and write all QC outputs |
+| `yes` | `true` | Exit with an error to avoid double-shifting |
+| `no` | `true` | Treat input coordinates as already shifted and write all QC outputs |
+| `no` | absent or `false` | Write only basic QC outputs; `tsse`, `nfr`, and `pt` are `null` in the JSON summary |
+
+Basic QC outputs include bamQC, MAPQ histogram, fragment size, library complexity, and the JSON
+summary. `--emit-shifted-bam` remains an output-emission flag and does not control metric
+semantics.
 
 ## Notes on `--emit-shifted-bam` / `--emit-split-bams`
 
