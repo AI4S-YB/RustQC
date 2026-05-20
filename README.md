@@ -87,12 +87,36 @@ sudo mv ./rustqc /usr/local/bin/
 
 # Run RNA-Seq QC
 rustqc rna sample.markdup.bam --gtf genes.gtf --paired --outdir results/
+
+# Run ATAC-seq QC
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/
+```
+
+`rustqc atac` expects paired-end BAM/SAM input and a GTF annotation file for
+TSS-dependent metrics. By default it assumes ordinary unshifted ATAC input and
+applies the +4/−5 Tn5 shift in memory for TSSEscore, NFRscore, and PTscore.
+For already shifted inputs, declare that explicitly:
+
+```bash
+rustqc atac sample.shifted.bam --gtf genes.gtf --outdir results/ \
+  --tn5-shift no --input-is-shifted
+```
+
+To skip Tn5-dependent metrics and write only shift-independent ATAC QC outputs
+(bamQC, MAPQ histogram, fragment size, library complexity, and JSON summary):
+
+```bash
+rustqc atac sample.markdup.bam --gtf genes.gtf --outdir results/ --tn5-shift no
 ```
 
 ```bash
-# Or use Docker
+# Or use Docker for RNA-Seq QC
 docker run --rm -v "$PWD":/data ghcr.io/seqeralabs/rustqc:latest \
   rustqc rna /data/sample.markdup.bam --gtf /data/genes.gtf --outdir /data/results
+
+# Or use Docker for ATAC-seq QC
+docker run --rm -v "$PWD":/data ghcr.io/seqeralabs/rustqc:latest \
+  rustqc atac /data/sample.markdup.bam --gtf /data/genes.gtf --outdir /data/results
 ```
 
 ```bash
