@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [Version 0.4.1](https://github.com/AI4S-YB/RustQC/releases/tag/v0.4.1) - 2026-05-20
+
+### Added
+
+- Explicit ATAC Tn5 shift controls: `--tn5-shift <yes|no>` and
+  `--input-is-shifted`, with matching YAML/env configuration and validation
+  for contradictory shifted-input settings.
+
+### Changed
+
+- `rustqc atac --tn5-shift no` on unshifted input now emits shift-independent
+  QC only, keeps skipped TSS-dependent summary sections as JSON `null`, and
+  reports the resolved `tn5_shift` state in the summary.
+
 ## [Version 0.4.0](https://github.com/AI4S-YB/RustQC/releases/tag/v0.4.0) - 2026-05-05
 
 ### Added
